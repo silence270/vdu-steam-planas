@@ -41,6 +41,58 @@
     { id: "komanda", label: "Komanda" }
   ];
 
+  // ---------- programėlės diegimas ----------
+
+  var installEvt = null;
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    installEvt = e;
+  });
+  window.addEventListener("appinstalled", function () {
+    toast("Programėlė įdiegta! Ieškokite ikonos pagrindiniame ekrane.");
+  });
+
+  function isStandalone() {
+    return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+      window.navigator.standalone === true;
+  }
+
+  function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
+  function installBtnHtml() {
+    if (isStandalone()) return "";
+    return '<button class="btn-outline" data-action="install-app" style="width:100%;justify-content:center;margin-top:12px">' +
+      '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M12 7v7M9 11.5L12 14.5l3-3M10 18.5h4"/></svg>' +
+      "Įdiegti telefone kaip programėlę</button>";
+  }
+
+  function installModal() {
+    var ios = '<div class="section-label" style="margin-top:0">iPhone / iPad</div>' +
+      '<ol style="margin:0 0 8px;padding-left:20px;line-height:1.8">' +
+        "<li>Atidarykite šią svetainę per <b>Safari</b> (kitos naršyklės netinka).</li>" +
+        "<li>Apačioje spauskite <b>dalinimosi mygtuką</b> (kvadratėlis su rodykle į viršų).</li>" +
+        "<li>Slinkite žemyn ir spauskite <b>„Add to Home Screen“ / „Pridėti į pradžios ekraną“</b>.</li>" +
+        "<li>Spauskite <b>„Add“ / „Pridėti“</b> — ikona atsiras ekrane.</li>" +
+      "</ol>";
+    var android = '<div class="section-label">Android</div>' +
+      '<ol style="margin:0 0 8px;padding-left:20px;line-height:1.8">' +
+        "<li>Atidarykite šią svetainę per <b>Chrome</b>.</li>" +
+        "<li>Viršuje dešinėje spauskite <b>⋮</b> (tris taškus).</li>" +
+        "<li>Spauskite <b>„Įdiegti programą“</b> arba <b>„Pridėti prie pagrindinio ekrano“</b>.</li>" +
+        "<li>Patvirtinkite — ikona atsiras tarp programų.</li>" +
+      "</ol>";
+    var content = isIOS() ? ios + android : android + ios;
+    openModal(
+      "<h2>Kaip įsidiegti programėlę</h2>" +
+      '<div class="hint" style="margin-bottom:12px">Įdiegta programėlė atsidaro per visą ekraną, be naršyklės juostų, ir veikia kaip įprasta programa.</div>' +
+      content +
+      '<div class="modal-actions"><button type="button" class="btn" data-action="close-modal">Supratau</button></div>'
+    );
+  }
+
   // ---------- pagalbininkai ----------
 
   function esc(s) {
@@ -316,6 +368,11 @@
       html += '<div class="empty">Aktyvių darbų neturite.</div>';
     }
     html += "</div>";
+    if (!isStandalone()) {
+      html += '<div class="card"><h2>Programėlė telefone</h2>' +
+        '<div class="hint" style="margin-bottom:4px">Įsidiekite sistemą į telefoną — atsidarys per visą ekraną, be naršyklės.</div>' +
+        installBtnHtml() + "</div>";
+    }
     return html;
   }
 
@@ -908,6 +965,7 @@
         ? 'Jau turite paskyrą? <a data-action="auth-toggle">Prisijungti</a>'
         : 'Pirmas kartas? <a data-action="auth-toggle">Registruotis</a>') +
       "</div>" +
+      installBtnHtml() +
     "</div></div>";
   }
 
@@ -924,6 +982,7 @@
         "</button>";
       }).join("") +
       "</div>" +
+      installBtnHtml() +
     "</div></div>";
   }
 
@@ -1035,6 +1094,13 @@
         break;
       case "close-modal":
         closeModal();
+        break;
+      case "install-app":
+        if (installEvt) {
+          installEvt.prompt();
+        } else {
+          installModal();
+        }
         break;
       case "export":
         exportExcel();
