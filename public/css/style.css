@@ -328,3 +328,86 @@ select.status-select.st-atlikta { color: var(--green); background: var(--green-s
   body { background: #fff; }
   .card { box-shadow: none; }
 }
+
+/* ---------- Pranešimai ---------- */
+.bell-btn { position: relative; padding: 6px 8px; }
+.bell-badge {
+  position: absolute; top: -2px; right: -2px;
+  background: var(--red); color: #fff;
+  font-size: 10px; font-weight: 700;
+  border-radius: 999px; padding: 1px 5px; line-height: 1.4;
+}
+.notif-row { display: flex; gap: 10px; padding: 10px 8px; border-top: 1px solid var(--border); cursor: pointer; align-items: flex-start; }
+.notif-row:hover { background: var(--gray-soft); }
+.notif-row .notif-dot { width: 8px; height: 8px; border-radius: 50%; background: transparent; margin-top: 7px; flex: 0 0 auto; }
+.notif-row.unread .notif-dot { background: var(--primary); }
+.notif-row.unread .notif-main { font-weight: 600; }
+.notif-main { min-width: 0; }
+.notif-main small { color: var(--muted); font-weight: 400; display: block; font-size: 12px; }
+
+/* ---------- Komentarai ---------- */
+.kom-row { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+.kom-row:first-child { border-top: none; }
+.kom-main { flex: 1; min-width: 0; font-size: 14px; }
+.kom-head { display: flex; align-items: center; gap: 8px; }
+.kom-head small { color: var(--muted); font-size: 12px; }
+.kom-head .btn-ghost { margin-left: auto; padding: 0 6px; }
+.kom-text { white-space: pre-wrap; word-break: break-word; }
+.kom-form { display: flex; gap: 8px; margin-top: 10px; }
+.kom-form input { flex: 1; border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; background: var(--surface); color: var(--text); }
+.kom-badge { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-size: 12px; }
+
+/* ---------- Atostogos / mėnuo / TV ---------- */
+.vac-pill { background: #8A8F9C !important; }
+.active-toggle { background: var(--primary-soft) !important; border-color: var(--primary) !important; color: var(--primary-dark) !important; }
+.month-table td.m-cell { height: 74px; cursor: pointer; padding: 4px 6px; vertical-align: top; }
+.month-table td.m-cell:hover { background: var(--gray-soft); }
+.month-table td.m-out { opacity: .45; }
+.m-num { font-size: 12px; font-weight: 700; color: var(--muted); }
+.m-dots { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.m-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.m-vac { font-size: 10.5px; color: var(--amber); margin-top: 3px; font-weight: 600; }
+
+.tv-mode { position: fixed; inset: 0; z-index: 90; background: var(--bg); padding: 26px 40px; overflow-y: auto; }
+.tv-head { display: flex; align-items: center; gap: 20px; justify-content: space-between; margin-bottom: 18px; }
+.tv-head small { display: block; color: var(--muted); }
+.tv-clock { font-size: 40px; font-weight: 700; }
+.tv-title { font-size: 24px; margin: 0 0 14px; }
+.tv-body { font-size: 18px; max-width: 1100px; margin: 0 auto; }
+.tv-body .load-row { padding: 14px 6px; cursor: default; }
+.tv-body .load-row .who { width: 320px; }
+.tv-body .track { height: 16px; border-radius: 9px; }
+.tv-body .fill { border-radius: 9px; }
+.tv-body .nums { width: 180px; font-size: 17px; }
+
+/* ---------- Tamsi tema ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15161B;
+    --surface: #1E2026;
+    --border: #32343C;
+    --text: #E8E9ED;
+    --muted: #9BA0AC;
+    --primary-soft: #2B2B4E;
+    --gray-soft: #2A2C33;
+    --green-soft: #1E3323;
+    --amber-soft: #3A2E16;
+    --red-soft: #3A1D1C;
+    --blue-soft: #1C2C44;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+  }
+  .sched-table th, .sched-table td.emp-cell { background: #23252C; }
+  .pool-card { background: #22242B; border-color: #3A3C45; }
+  .toast { background: #E8E9ED; color: #15161B; }
+  .demo-note { color: #9CC2FF; }
+  .chip-blue { color: #8FB8F2; }
+  .chip-green { color: #7FC98B; }
+  .chip-amber { color: #E2B056; }
+  .chip-red { color: #F09590; }
+  .chip-primary { color: #ABABF0; }
+  select.status-select.st-vykdoma { color: #8FB8F2; }
+  select.status-select.st-atlikta { color: #7FC98B; }
+  .login-card input, .modal input, .modal select, .modal textarea,
+  .toolbar input[type="search"], .toolbar select, select.status-select { background: #23252C; color: var(--text); }
+  .cell-add { color: #5A5D68; }
+}

@@ -101,6 +101,7 @@ window.API = (function () {
     ].map(function (t) {
       t.id = uid();
       t.aprasymas = t.aprasymas || "";
+      if (t.statusas === "atlikta") t.atlikta_at = day(1) + "T12:00:00";
       return t;
     });
 
@@ -127,7 +128,20 @@ window.API = (function () {
       });
     });
 
-    return { version: 1, employees: employees, tasks: tasks, shifts: shifts };
+    var komentarai = [
+      { id: uid(), uzduotis_id: tasks[0].id, darbuotojas_id: "d01", tekstas: "Programą derinam su Kauno mokyklomis — laukiu jų atsakymo.", created_at: day(1) + "T10:30:00" }
+    ];
+    var pranesimai = [
+      { id: uid(), darbuotojas_id: "d03", tekstas: "Demo: taip atrodys pranešimai apie priskirtus darbus", vaizdas: "darbai", perskaityta: false, created_at: day(2) + "T09:00:00" }
+    ];
+    var atostogos = [
+      { id: uid(), darbuotojas_id: "d15", nuo: day(0), iki: day(6), tipas: "atostogos", pastaba: "" }
+    ];
+
+    return {
+      version: 1, employees: employees, tasks: tasks, shifts: shifts,
+      komentarai: komentarai, pranesimai: pranesimai, atostogos: atostogos
+    };
   }
 
   function demoLoad() {
@@ -135,7 +149,14 @@ window.API = (function () {
       var raw = localStorage.getItem(DEMO_KEY);
       if (raw) {
         var parsed = JSON.parse(raw);
-        if (parsed && parsed.employees) return parsed;
+        if (parsed && parsed.employees) {
+          parsed.tasks = parsed.tasks || [];
+          parsed.shifts = parsed.shifts || [];
+          parsed.komentarai = parsed.komentarai || [];
+          parsed.pranesimai = parsed.pranesimai || [];
+          parsed.atostogos = parsed.atostogos || [];
+          return parsed;
+        }
       }
     } catch (e) { /* sugadinti duomenys — perkuriame */ }
     var seeded = demoSeed();
@@ -151,7 +172,10 @@ window.API = (function () {
   // ---------- vieša sąsaja ----------
 
   async function init() {
-    if (cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase) {
+    // Adresas su ?demo=1 įjungia demo režimą (išbandymui, tikri duomenys neliečiami)
+    var forceDemo = false;
+    try { forceDemo = new URLSearchParams(window.location.search).has("demo"); } catch (e) {}
+    if (!forceDemo && cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase) {
       sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
       mode = "supabase";
     } else {
@@ -177,7 +201,7 @@ window.API = (function () {
     if (mode === "supabase") {
       // setTimeout būtinas: supabase-js viduje laiko užraktą, ir auth
       // kvietimai tiesiai iš šio callback'o užstrigtų (žinoma kliūtis).
-      sb.auth.onAuthStateChange(function () { setTimeout(cb, 0); });
+      sb.auth.onAuthStateChange(function (event) { setTimeout(function () { cb(event); }, 0); });
     }
   }
 
@@ -198,6 +222,18 @@ window.API = (function () {
       throw new Error("Registracija priimta, bet reikia patvirtinti el. paštą. Patikrinkite pašto dėžutę.");
     }
     return res.data.session;
+  }
+
+  async function resetPassword(email) {
+    var res = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (res.error) throw new Error(translateAuthError(res.error.message));
+  }
+
+  async function updatePassword(newPassword) {
+    var res = await sb.auth.updateUser({ password: newPassword });
+    if (res.error) throw new Error(translateAuthError(res.error.message));
   }
 
   async function signOut() {
@@ -228,6 +264,13 @@ window.API = (function () {
       for (var i = 0; i < results.length; i++) {
         if (results[i].error) throw new Error("Nepavyko gauti duomenų: " + results[i].error.message);
       }
+      // Naujesnės lentelės: jei jų dar nėra (nepaleistas atnaujinimo SQL),
+      // sistema veikia toliau, tik parodo priminimą administratoriui.
+      var extras = await Promise.all([
+        sb.from("komentarai").select("*").order("created_at"),
+        sb.from("pranesimai").select("*").order("created_at", { ascending: false }).limit(200),
+        sb.from("atostogos").select("*").order("nuo")
+      ]);
       return {
         employees: results[0].data || [],
         tasks: results[1].data || [],
@@ -235,11 +278,19 @@ window.API = (function () {
           s.nuo = String(s.nuo).slice(0, 5);
           s.iki = String(s.iki).slice(0, 5);
           return s;
-        })
+        }),
+        comments: extras[0].data || [],
+        notifications: extras[1].data || [],
+        vacations: extras[2].data || [],
+        migrationNeeded: extras.some(function (r) { return !!r.error; })
       };
     }
     var d = demoLoad();
-    return { employees: d.employees.slice(), tasks: d.tasks.slice(), shifts: d.shifts.slice() };
+    return {
+      employees: d.employees.slice(), tasks: d.tasks.slice(), shifts: d.shifts.slice(),
+      comments: d.komentarai.slice(), notifications: d.pranesimai.slice(), vacations: d.atostogos.slice(),
+      migrationNeeded: false
+    };
   }
 
   // ---------- įrašų keitimas ----------
@@ -330,6 +381,68 @@ window.API = (function () {
     });
   }
 
+  async function addComment(obj) {
+    if (mode === "supabase") return sbInsert("komentarai", obj);
+    return demoMutate(function (d) {
+      obj.id = uid();
+      obj.created_at = new Date().toISOString();
+      d.komentarai.push(obj);
+      return obj;
+    });
+  }
+  async function deleteComment(id) {
+    if (mode === "supabase") return sbDelete("komentarai", id);
+    return demoMutate(function (d) {
+      d.komentarai = d.komentarai.filter(function (x) { return x.id !== id; });
+    });
+  }
+
+  async function addNotifications(list) {
+    if (!list || !list.length) return;
+    if (mode === "supabase") {
+      var res = await sb.from("pranesimai").insert(list);
+      if (res.error) throw new Error("Nepavyko sukurti pranešimo: " + res.error.message);
+      return;
+    }
+    return demoMutate(function (d) {
+      list.forEach(function (n) {
+        n.id = uid();
+        n.perskaityta = false;
+        n.created_at = new Date().toISOString();
+        d.pranesimai.unshift(n);
+      });
+    });
+  }
+
+  async function markNotificationsRead(ids) {
+    if (!ids || !ids.length) return;
+    if (mode === "supabase") {
+      var res = await sb.from("pranesimai").update({ perskaityta: true }).in("id", ids);
+      if (res.error) throw new Error("Nepavyko: " + res.error.message);
+      return;
+    }
+    return demoMutate(function (d) {
+      d.pranesimai.forEach(function (n) {
+        if (ids.indexOf(n.id) !== -1) n.perskaityta = true;
+      });
+    });
+  }
+
+  async function addVacation(obj) {
+    if (mode === "supabase") return sbInsert("atostogos", obj);
+    return demoMutate(function (d) {
+      obj.id = uid();
+      d.atostogos.push(obj);
+      return obj;
+    });
+  }
+  async function deleteVacation(id) {
+    if (mode === "supabase") return sbDelete("atostogos", id);
+    return demoMutate(function (d) {
+      d.atostogos = d.atostogos.filter(function (x) { return x.id !== id; });
+    });
+  }
+
   // ---------- gyvas atsinaujinimas ----------
 
   function subscribe(onData, onStatus) {
@@ -368,6 +481,9 @@ window.API = (function () {
         .on("postgres_changes", { event: "*", schema: "public", table: "darbuotojai" }, debouncedRefetch)
         .on("postgres_changes", { event: "*", schema: "public", table: "uzduotys" }, debouncedRefetch)
         .on("postgres_changes", { event: "*", schema: "public", table: "tvarkarastis" }, debouncedRefetch)
+        .on("postgres_changes", { event: "*", schema: "public", table: "komentarai" }, debouncedRefetch)
+        .on("postgres_changes", { event: "*", schema: "public", table: "pranesimai" }, debouncedRefetch)
+        .on("postgres_changes", { event: "*", schema: "public", table: "atostogos" }, debouncedRefetch)
         .subscribe(function (status) {
           if (stopped) return;
           if (status === "SUBSCRIBED") {
@@ -402,6 +518,8 @@ window.API = (function () {
     signIn: signIn,
     signUp: signUp,
     signOut: signOut,
+    resetPassword: resetPassword,
+    updatePassword: updatePassword,
     demoUsers: demoUsers,
     demoSignIn: demoSignIn,
     fetchAll: fetchAll,
@@ -413,6 +531,12 @@ window.API = (function () {
     addShift: addShift,
     updateShift: updateShift,
     deleteShift: deleteShift,
+    addComment: addComment,
+    deleteComment: deleteComment,
+    addNotifications: addNotifications,
+    markNotificationsRead: markNotificationsRead,
+    addVacation: addVacation,
+    deleteVacation: deleteVacation,
     subscribe: subscribe
   };
 })();
