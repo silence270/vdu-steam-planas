@@ -86,18 +86,18 @@ window.API = (function () {
     }
 
     var tasks = [
-      { pavadinimas: "STEAM dirbtuvių programa mokykloms", darbuotojas_id: "d04", valandos: 12, terminas: day(4), prioritetas: "aukstas", statusas: "vykdoma" },
-      { pavadinimas: "Laboratorijos inventoriaus patikra", darbuotojas_id: "d10", valandos: 6, terminas: day(2), prioritetas: "vidutinis", statusas: "vykdoma" },
-      { pavadinimas: "Mokytojų kvalifikacijos seminaras", darbuotojas_id: "d01", valandos: 8, terminas: day(8), prioritetas: "aukstas", statusas: "laukia" },
-      { pavadinimas: "Renginio „Tyrėjų naktis“ planas", darbuotojas_id: "d02", valandos: 10, terminas: day(11), prioritetas: "vidutinis", statusas: "vykdoma" },
-      { pavadinimas: "Svetainės naujienų atnaujinimas", darbuotojas_id: "d03", valandos: 3, terminas: day(3), prioritetas: "zemas", statusas: "laukia" },
-      { pavadinimas: "Chemijos pamokų metodinė medžiaga", darbuotojas_id: "d06", valandos: 9, terminas: day(9), prioritetas: "vidutinis", statusas: "vykdoma" },
-      { pavadinimas: "Ekskursijų grafiko derinimas", darbuotojas_id: "d07", valandos: 4, terminas: day(1), prioritetas: "vidutinis", statusas: "atlikta" },
-      { pavadinimas: "Robotikos būrelio užsiėmimai", darbuotojas_id: "d09", valandos: 14, terminas: day(10), prioritetas: "aukstas", statusas: "vykdoma" },
-      { pavadinimas: "Ataskaitos ministerijai juodraštis", darbuotojas_id: "d01", valandos: 6, terminas: day(5), prioritetas: "aukstas", statusas: "laukia" },
-      { pavadinimas: "Naujų mikroskopų užsakymas", darbuotojas_id: null, valandos: 3, terminas: day(7), prioritetas: "vidutinis", statusas: "laukia" },
-      { pavadinimas: "Vasaros stovyklos programos idėjos", darbuotojas_id: null, valandos: 8, terminas: day(14), prioritetas: "vidutinis", statusas: "laukia" },
-      { pavadinimas: "Socialinių tinklų įrašai (birželis)", darbuotojas_id: null, valandos: 5, terminas: day(12), prioritetas: "zemas", statusas: "laukia" }
+      { pavadinimas: "STEAM dirbtuvių programa mokykloms", darbuotojas_id: "d04", valandos: 12, terminas: day(4), prioritetas: "aukstas", statusas: "vykdoma", kategorija: "Edukacija" },
+      { pavadinimas: "Laboratorijos inventoriaus patikra", darbuotojas_id: "d10", valandos: 6, terminas: day(2), prioritetas: "vidutinis", statusas: "vykdoma", kategorija: "Administracija" },
+      { pavadinimas: "Mokytojų kvalifikacijos seminaras", darbuotojas_id: "d01", valandos: 8, terminas: day(8), prioritetas: "aukstas", statusas: "laukia", kategorija: "Metodinė veikla" },
+      { pavadinimas: "Renginio „Tyrėjų naktis“ planas", darbuotojas_id: "d02", valandos: 10, terminas: day(11), prioritetas: "vidutinis", statusas: "vykdoma", kategorija: "Renginys" },
+      { pavadinimas: "Svetainės naujienų atnaujinimas", darbuotojas_id: "d03", valandos: 3, terminas: day(3), prioritetas: "zemas", statusas: "laukia", kategorija: "Administracija" },
+      { pavadinimas: "Chemijos pamokų metodinė medžiaga", darbuotojas_id: "d06", valandos: 9, terminas: day(9), prioritetas: "vidutinis", statusas: "vykdoma", kategorija: "Metodinė veikla" },
+      { pavadinimas: "Ekskursijų grafiko derinimas", darbuotojas_id: "d07", valandos: 4, terminas: day(1), prioritetas: "vidutinis", statusas: "atlikta", kategorija: "Edukacija" },
+      { pavadinimas: "Robotikos būrelio užsiėmimai", darbuotojas_id: "d09", valandos: 14, terminas: day(10), prioritetas: "aukstas", statusas: "vykdoma", kategorija: "Edukacija" },
+      { pavadinimas: "Ataskaitos ministerijai juodraštis", darbuotojas_id: "d01", valandos: 6, terminas: day(5), prioritetas: "aukstas", statusas: "laukia", kategorija: "Administracija" },
+      { pavadinimas: "Naujų mikroskopų užsakymas", darbuotojas_id: null, valandos: 3, terminas: day(7), prioritetas: "vidutinis", statusas: "laukia", kategorija: "Administracija" },
+      { pavadinimas: "Vasaros stovyklos programos idėjos", darbuotojas_id: null, valandos: 8, terminas: day(14), prioritetas: "vidutinis", statusas: "laukia", kategorija: "Projektas" },
+      { pavadinimas: "Socialinių tinklų įrašai (birželis)", darbuotojas_id: null, valandos: 5, terminas: day(12), prioritetas: "zemas", statusas: "laukia", kategorija: "Administracija" }
     ].map(function (t) {
       t.id = uid();
       t.aprasymas = t.aprasymas || "";

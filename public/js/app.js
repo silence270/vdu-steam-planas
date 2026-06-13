@@ -12,7 +12,7 @@
     view: "apzvalga",
     weekOffset: 0,
     selDay: null,
-    filters: { emp: "", status: "aktyvus", q: "" },
+    filters: { emp: "", status: "aktyvus", q: "", kat: "" },
     authMode: "login",
     liveStatus: "",
     unsub: null,
@@ -38,6 +38,7 @@
   var MONTHS_GEN = ["sausio", "vasario", "kovo", "balandžio", "gegužės", "birželio", "liepos", "rugpjūčio", "rugsėjo", "spalio", "lapkričio", "gruodžio"];
   var MONTHS_NOM = ["Sausis", "Vasaris", "Kovas", "Balandis", "Gegužė", "Birželis", "Liepa", "Rugpjūtis", "Rugsėjis", "Spalis", "Lapkritis", "Gruodis"];
   var VAC_LABEL = { atostogos: "Atostogos", liga: "Liga", kita: "Kita" };
+  var CATEGORIES = ["Edukacija", "Renginys", "Administracija", "Metodinė veikla", "Projektas", "Kita"];
   var MONTHS_SHORT = ["saus.", "vas.", "kov.", "bal.", "geg.", "birž.", "liep.", "rugp.", "rugs.", "spal.", "lapkr.", "gruod."];
 
   var ICONS = {
@@ -460,6 +461,11 @@
     return '<span class="kom-badge"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H4l2.5-3A8 8 0 1 1 21 12z"/></svg>' + n + "</span>";
   }
 
+  function katBadge(t) {
+    if (!t.kategorija) return "";
+    return '<span class="chip chip-cat">' + esc(t.kategorija) + "</span>";
+  }
+
   function poolCardHtml(t) {
     var actions = "";
     if (isAdmin()) {
@@ -473,7 +479,7 @@
       '<div class="t-main"><div class="t-title">' + esc(t.pavadinimas) + "</div>" +
         '<div class="t-meta"><span>' + (Number(t.valandos) || 0) + " val.</span>" +
         (t.terminas ? "<span>Iki " + fmtShort(t.terminas) + "</span>" : "") +
-        '<span class="chip ' + PRIO_CHIP[t.prioritetas] + '">' + PRIO[t.prioritetas] + "</span></div>" +
+        '<span class="chip ' + PRIO_CHIP[t.prioritetas] + '">' + PRIO[t.prioritetas] + "</span>" + katBadge(t) + "</div>" +
       "</div>" +
       '<div class="t-actions">' + actions + "</div>" +
     "</div>";
@@ -537,6 +543,7 @@
           (t.terminas ? '<span class="' + (overdue ? "overdue" : "") + '">Iki ' + fmtShort(t.terminas) + (overdue ? " (vėluoja)" : "") + "</span>" : "") +
           dueBadge(t) +
           '<span class="chip ' + PRIO_CHIP[t.prioritetas] + '">' + PRIO[t.prioritetas] + "</span>" +
+          katBadge(t) +
           komBadge(t) +
         "</div>" +
       "</div>" +
@@ -559,13 +566,17 @@
       if (!f.status) return true;
       return t.statusas === f.status;
     }
+    function matchKat(t) {
+      if (!f.kat) return true;
+      return (t.kategorija || "") === f.kat;
+    }
 
-    var pool = poolTasks().filter(matchQ);
+    var pool = poolTasks().filter(matchQ).filter(matchKat);
     var list = S.tasks.filter(function (t) {
       if (!t.darbuotojas_id) return false;
       if (f.emp === "pool") return false;
       if (f.emp && t.darbuotojas_id !== f.emp) return false;
-      return matchQ(t) && matchStatus(t);
+      return matchQ(t) && matchStatus(t) && matchKat(t);
     });
     list.sort(function (a, b) {
       var doneA = a.statusas === "atlikta" ? 1 : 0;
@@ -597,6 +608,9 @@
         '<option value="laukia"' + (f.status === "laukia" ? " selected" : "") + ">Laukia</option>" +
         '<option value="vykdoma"' + (f.status === "vykdoma" ? " selected" : "") + ">Vykdomi</option>" +
         '<option value="atlikta"' + (f.status === "atlikta" ? " selected" : "") + ">Atlikti</option>" +
+      "</select>" +
+      '<select data-change="filter-kat"><option value="">Visos kategorijos</option>' +
+        CATEGORIES.map(function (c) { return '<option value="' + esc(c) + '"' + (f.kat === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") +
       "</select>" +
     "</div>";
 
@@ -864,7 +878,7 @@
     var isNew = !task;
     var t = task || {
       pavadinimas: "", aprasymas: "", valandos: 4, terminas: "",
-      prioritetas: "vidutinis", statusas: "laukia",
+      prioritetas: "vidutinis", statusas: "laukia", kategorija: "",
       darbuotojas_id: opts.pool ? null : (isAdmin() ? null : (S.me ? S.me.id : null))
     };
     var ov = openModal(
@@ -880,6 +894,9 @@
           "</select></div>" +
           '<div class="form-row"><label>Statusas</label><select name="statusas">' +
             Object.keys(STATUS).map(function (k) { return '<option value="' + k + '"' + (t.statusas === k ? " selected" : "") + ">" + STATUS[k] + "</option>"; }).join("") +
+          "</select></div>" +
+          '<div class="form-row"><label>Kategorija</label><select name="kategorija"><option value="">—</option>' +
+            CATEGORIES.map(function (c) { return '<option value="' + esc(c) + '"' + (t.kategorija === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") +
           "</select></div>" +
         "</div>" +
         '<div class="form-row"><label>Aprašymas</label><textarea name="aprasymas">' + esc(t.aprasymas || "") + "</textarea></div>" +
@@ -904,6 +921,7 @@
         terminas: fd.get("terminas") || null,
         prioritetas: fd.get("prioritetas"),
         statusas: fd.get("statusas"),
+        kategorija: fd.get("kategorija") || "",
         aprasymas: String(fd.get("aprasymas") || "").trim()
       };
       if (!obj.pavadinimas) return;
@@ -1316,12 +1334,25 @@
       return {
         "Darbas": t.pavadinimas,
         "Darbuotojas": emp ? emp.vardas : "—",
+        "Kategorija": t.kategorija || "",
         "Valandos": Number(t.valandos) || 0,
         "Atlikta": String(t.atlikta_at).slice(0, 10)
       };
     });
-    if (!doneRows.length) doneRows = [{ "Darbas": "Šį mėnesį atliktų darbų nėra", "Darbuotojas": "", "Valandos": "", "Atlikta": "" }];
+    if (!doneRows.length) doneRows = [{ "Darbas": "Šį mėnesį atliktų darbų nėra", "Darbuotojas": "", "Kategorija": "", "Valandos": "", "Atlikta": "" }];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(doneRows), "Atlikti darbai");
+    // Suvestinė pagal kategoriją
+    var katMap = {};
+    done.forEach(function (t) {
+      var k = t.kategorija || "(be kategorijos)";
+      if (!katMap[k]) katMap[k] = { n: 0, h: 0 };
+      katMap[k].n++;
+      katMap[k].h += Number(t.valandos) || 0;
+    });
+    var katRows = Object.keys(katMap).map(function (k) {
+      return { "Kategorija": k, "Darbų": katMap[k].n, "Valandos": Math.round(katMap[k].h * 10) / 10 };
+    });
+    if (katRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(katRows), "Pagal kategoriją");
     var sumRows = activeEmployees().map(function (e) {
       var mine = done.filter(function (t) { return t.darbuotojas_id === e.id; });
       var hrs = mine.reduce(function (a, t) { return a + (Number(t.valandos) || 0); }, 0);
@@ -1384,6 +1415,7 @@
           darbuotojas_id: empId,
           valandos: Number(r["Valandos"]) || 0,
           terminas: impDate(r["Terminas"]),
+          kategorija: String(r["Kategorija"] || "").trim(),
           prioritetas: prMap[deacc(r["Prioritetas"])] || "vidutinis",
           statusas: stMap[deacc(r["Statusas"])] || "laukia",
           aprasymas: String(r["Aprašymas"] || r["Aprasymas"] || "").trim()
@@ -1511,6 +1543,7 @@
         "Darbuotojas": emp ? emp.vardas : "Nepriskirta",
         "Valandos": Number(t.valandos) || 0,
         "Terminas": t.terminas || "",
+        "Kategorija": t.kategorija || "",
         "Prioritetas": PRIO[t.prioritetas] || t.prioritetas,
         "Statusas": STATUS[t.statusas] || t.statusas,
         "Aprašymas": t.aprasymas || ""
@@ -1902,6 +1935,9 @@
       render();
     } else if (what === "filter-status") {
       S.filters.status = el.value;
+      render();
+    } else if (what === "filter-kat") {
+      S.filters.kat = el.value;
       render();
     }
   });

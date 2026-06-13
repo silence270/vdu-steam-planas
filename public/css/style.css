@@ -411,3 +411,13 @@ select.status-select.st-atlikta { color: var(--green); background: var(--green-s
   .toolbar input[type="search"], .toolbar select, select.status-select { background: #23252C; color: var(--text); }
   .cell-add { color: #5A5D68; }
 }
+
+/* ---------- Kategorijos žyma ---------- */
+.chip-cat {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  border: 1px solid transparent;
+}
+@media (prefers-color-scheme: dark) {
+  .chip-cat { color: #C7C7F5; }
+}

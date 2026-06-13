@@ -8,6 +8,9 @@
 -- Darbų atlikimo data (mėnesio ataskaitoms)
 alter table public.uzduotys add column if not exists atlikta_at timestamptz;
 
+-- Darbų kategorija (Edukacija, Renginys, Administracija ir pan.)
+alter table public.uzduotys add column if not exists kategorija text default '';
+
 -- ---------- Komentarai prie darbų ----------
 
 create table if not exists public.komentarai (
