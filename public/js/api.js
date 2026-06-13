@@ -12,6 +12,10 @@ window.API = (function () {
   var channel = null;
   var lastDataHash = "";
   var authCallbacks = [];
+  // Ar duomenų bazėje jau yra naujesni stulpeliai/lentelės (atnaujinimas-1.sql).
+  // Optimistiškai true; fetchAll patikslina. Jei dar ne — appsas nemeta klaidų,
+  // tik tų funkcijų neleidžia, kol adminas paleidžia atnaujinimą.
+  var caps = { taskExtras: true, extraTables: true };
 
   var DEMO_KEY = "steamPlanas.demo.v1";
   var DEMO_USER_KEY = "steamPlanas.demoUser";
@@ -271,6 +275,11 @@ window.API = (function () {
         sb.from("pranesimai").select("*").order("created_at", { ascending: false }).limit(200),
         sb.from("atostogos").select("*").order("nuo")
       ]);
+      var migrationNeeded = extras.some(function (r) { return !!r.error; });
+      // Atskirai patikrinam, ar uzduotys turi naujus stulpelius (atlikta_at, kategorija)
+      var colProbe = await sb.from("uzduotys").select("atlikta_at, kategorija").limit(1);
+      caps.taskExtras = !colProbe.error;
+      caps.extraTables = !migrationNeeded;
       return {
         employees: results[0].data || [],
         tasks: results[1].data || [],
@@ -282,15 +291,34 @@ window.API = (function () {
         comments: extras[0].data || [],
         notifications: extras[1].data || [],
         vacations: extras[2].data || [],
-        migrationNeeded: extras.some(function (r) { return !!r.error; })
+        migrationNeeded: migrationNeeded || !caps.taskExtras
       };
     }
+    caps.taskExtras = true;
+    caps.extraTables = true;
     var d = demoLoad();
     return {
       employees: d.employees.slice(), tasks: d.tasks.slice(), shifts: d.shifts.slice(),
       comments: d.komentarai.slice(), notifications: d.pranesimai.slice(), vacations: d.atostogos.slice(),
       migrationNeeded: false
     };
+  }
+
+  // Pašalina laukus, kurių DB dar neturi, kad nemestų klaidos.
+  function stripUnsupported(obj) {
+    if (mode === "supabase" && !caps.taskExtras) {
+      var copy = {};
+      for (var k in obj) {
+        if (obj.hasOwnProperty(k) && k !== "atlikta_at" && k !== "kategorija") copy[k] = obj[k];
+      }
+      return copy;
+    }
+    return obj;
+  }
+  function needExtraTables() {
+    if (mode === "supabase" && !caps.extraTables) {
+      throw new Error("Šiai funkcijai reikia duomenų bazės atnaujinimo. Administratorius: Supabase SQL Editor paleiskite atnaujinimas-1.sql.");
+    }
   }
 
   // ---------- įrašų keitimas ----------
@@ -336,7 +364,7 @@ window.API = (function () {
   }
 
   async function addTask(obj) {
-    if (mode === "supabase") return sbInsert("uzduotys", obj);
+    if (mode === "supabase") return sbInsert("uzduotys", stripUnsupported(obj));
     return demoMutate(function (d) {
       obj.id = uid();
       d.tasks.unshift(obj);
@@ -344,7 +372,7 @@ window.API = (function () {
     });
   }
   async function updateTask(id, patch) {
-    if (mode === "supabase") return sbUpdate("uzduotys", id, patch);
+    if (mode === "supabase") return sbUpdate("uzduotys", id, stripUnsupported(patch));
     return demoMutate(function (d) {
       var t = d.tasks.find(function (x) { return x.id === id; });
       if (t) Object.assign(t, patch);
@@ -382,6 +410,7 @@ window.API = (function () {
   }
 
   async function addComment(obj) {
+    needExtraTables();
     if (mode === "supabase") return sbInsert("komentarai", obj);
     return demoMutate(function (d) {
       obj.id = uid();
@@ -399,6 +428,7 @@ window.API = (function () {
 
   async function addNotifications(list) {
     if (!list || !list.length) return;
+    if (mode === "supabase" && !caps.extraTables) return; // tyliai praleidžiam, kol nėra lentelės
     if (mode === "supabase") {
       var res = await sb.from("pranesimai").insert(list);
       if (res.error) throw new Error("Nepavyko sukurti pranešimo: " + res.error.message);
@@ -416,6 +446,7 @@ window.API = (function () {
 
   async function markNotificationsRead(ids) {
     if (!ids || !ids.length) return;
+    if (mode === "supabase" && !caps.extraTables) return;
     if (mode === "supabase") {
       var res = await sb.from("pranesimai").update({ perskaityta: true }).in("id", ids);
       if (res.error) throw new Error("Nepavyko: " + res.error.message);
@@ -429,6 +460,7 @@ window.API = (function () {
   }
 
   async function addVacation(obj) {
+    needExtraTables();
     if (mode === "supabase") return sbInsert("atostogos", obj);
     return demoMutate(function (d) {
       obj.id = uid();
