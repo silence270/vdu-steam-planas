@@ -1,0 +1,54 @@
+name: Atsarginė kopija
+
+# Kasdien 04:00 (Lietuvos laiku) padaro visų duomenų kopiją ir įrašo
+# į aplanką "backups/" repozitorijoje. Galima paleisti ir rankiniu būdu.
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC = 05:00 vasaros / 04:00 žiemos Lietuvoje
+  workflow_dispatch:        # mygtukas GitHub'e rankiniam paleidimui
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parsisiųsti repozitoriją
+        uses: actions/checkout@v4
+
+      - name: Padaryti duomenų kopiją
+        env:
+          SUPABASE_URL: https://wiqvozhvfcxnvfoljjlu.supabase.co
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          set -e
+          if [ -z "$SERVICE_KEY" ]; then
+            echo "Trūksta SUPABASE_SERVICE_KEY paslapties — žr. ATSARGINES-KOPIJOS.md"
+            exit 1
+          fi
+          DATA=$(date -u +%Y-%m-%d)
+          mkdir -p backups
+          OUT="backups/$DATA.json"
+          echo "{" > "$OUT"
+          FIRST=1
+          for TABLE in darbuotojai uzduotys tvarkarastis komentarai pranesimai atostogos; do
+            if [ $FIRST -eq 0 ]; then echo "," >> "$OUT"; fi
+            FIRST=0
+            printf '  "%s": ' "$TABLE" >> "$OUT"
+            curl -s "$SUPABASE_URL/rest/v1/$TABLE?select=*" \
+              -H "apikey: $SERVICE_KEY" \
+              -H "Authorization: Bearer $SERVICE_KEY" >> "$OUT" || echo "[]" >> "$OUT"
+          done
+          echo "" >> "$OUT"
+          echo "}" >> "$OUT"
+          echo "Sukurta: $OUT ($(wc -c < "$OUT") baitų)"
+
+      - name: Įrašyti į repozitoriją
+        run: |
+          git config user.name "Atsargine kopija (bot)"
+          git config user.email "actions@github.com"
+          git add backups/
+          if git diff --staged --quiet; then
+            echo "Pakeitimų nėra — kopija nepasikeitė."
+          else
+            git commit -m "Automatinė atsarginė kopija $(date -u +%Y-%m-%d)"
+            git push
+          fi
