@@ -19,8 +19,9 @@ ir **Netlify** (svetainės talpinimas). Viskas žemiau — žingsnis po žingsni
 
    ```sql
    update darbuotojai set email = 'jusu.pastas@vdu.lt'
-   where vardas = 'Gabrielius Plungė';
+   where vardas = 'Demo Administratorius';
    ```
+   (Vardus į tikrus pakeisite vėliau pačioje sistemoje, skiltyje „Komanda".)
 
 5. Kairėje **Authentication → Sign In / Providers → Email** → išjunkite
    **Confirm email** → Save. (Kitaip komanda negalės registruotis be pašto

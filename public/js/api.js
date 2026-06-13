@@ -44,21 +44,21 @@ window.API = (function () {
 
   function demoSeed() {
     var people = [
-      ["Judita Žukauskienė", "Vadovė", "admin", "#7C3AED"],
-      ["Gabrielė Viduolytė", "Pavaduotoja", "admin", "#0E9F6E"],
-      ["Gabrielius Plungė", "Administratorius", "admin", "#5B5BD6"],
-      ["Edvina Kudakienė", "", "darbuotojas", "#D946EF"],
-      ["Aritonė Gilė", "", "darbuotojas", "#F59E0B"],
-      ["Emilija Jankaitytė", "", "darbuotojas", "#10B981"],
-      ["Simona Jokubauskienė", "", "darbuotojas", "#3B82F6"],
-      ["Simona Paul", "", "darbuotojas", "#EF4444"],
-      ["Ugnė Filomena Gaudėšiūtė", "", "darbuotojas", "#8B5CF6"],
-      ["Tomas Ūksas", "", "darbuotojas", "#14B8A6"],
-      ["Povilas Dryža", "", "darbuotojas", "#F97316"],
-      ["Artūras Karpavičius", "", "darbuotojas", "#6366F1"],
-      ["Marius Kaminskas", "", "darbuotojas", "#0EA5E9"],
-      ["Marta Baranauskaitė", "", "darbuotojas", "#EC4899"],
-      ["Lina Ragelienė", "", "darbuotojas", "#84CC16"]
+      ["Demo Vadovė", "Vadovė", "admin", "#7C3AED"],
+      ["Demo Pavaduotoja", "Pavaduotoja", "admin", "#0E9F6E"],
+      ["Demo Administratorius", "Administratorius", "admin", "#5B5BD6"],
+      ["Darbuotojas 1", "", "darbuotojas", "#D946EF"],
+      ["Darbuotojas 2", "", "darbuotojas", "#F59E0B"],
+      ["Darbuotojas 3", "", "darbuotojas", "#10B981"],
+      ["Darbuotojas 4", "", "darbuotojas", "#3B82F6"],
+      ["Darbuotojas 5", "", "darbuotojas", "#EF4444"],
+      ["Darbuotojas 6", "", "darbuotojas", "#8B5CF6"],
+      ["Darbuotojas 7", "", "darbuotojas", "#14B8A6"],
+      ["Darbuotojas 8", "", "darbuotojas", "#F97316"],
+      ["Darbuotojas 9", "", "darbuotojas", "#6366F1"],
+      ["Darbuotojas 10", "", "darbuotojas", "#0EA5E9"],
+      ["Darbuotojas 11", "", "darbuotojas", "#EC4899"],
+      ["Darbuotojas 12", "", "darbuotojas", "#84CC16"]
     ];
     var employees = people.map(function (p, i) {
       return {
