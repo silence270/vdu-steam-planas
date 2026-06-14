@@ -706,11 +706,12 @@
     "</div></div>";
 
     html += '<div class="card"><div class="week-nav">' +
-      '<button class="btn-outline btn-sm" data-action="week-prev">‹</button>' +
-      '<span class="range">' + (S.schedMode === "week" ? weekRangeLabel(mon) : monthLabel()) + "</span>" +
-      '<button class="btn-outline btn-sm" data-action="week-next">›</button>' +
-      '<button class="btn-ghost btn-sm" data-action="week-today">' + (S.schedMode === "week" ? "Ši savaitė" : "Šis mėnuo") + "</button>" +
-      '<span style="flex:1"></span>' +
+      '<div class="wn-left">' +
+        '<button class="btn-outline btn-sm wn-arrow" data-action="week-prev">‹</button>' +
+        '<span class="range">' + (S.schedMode === "week" ? weekRangeLabel(mon) : monthLabel()) + "</span>" +
+        '<button class="btn-outline btn-sm wn-arrow" data-action="week-next">›</button>' +
+        '<button class="btn-ghost btn-sm" data-action="week-today">' + (S.schedMode === "week" ? "Ši savaitė" : "Šis mėnuo") + "</button>" +
+      "</div>" +
       '<div class="segmented">' +
         '<button class="' + (S.schedMode === "week" ? "active" : "") + '" data-action="sched-week">Savaitė</button>' +
         '<button class="' + (S.schedMode === "month" ? "active" : "") + '" data-action="sched-month">Mėnuo</button>' +
