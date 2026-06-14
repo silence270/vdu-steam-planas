@@ -27,8 +27,29 @@
     tvTimer: null,
     schedMode: "week",
     monthOffset: 0,
-    teamQ: ""
+    teamQ: "",
+    viewChanged: true
   };
+
+  var RING_COLORS = { "fill-low": "#AEAEB2", "fill-ok": "#34C759", "fill-warn": "#FF9F0A", "fill-high": "#FF453A" };
+  function ringColor(pct) { return RING_COLORS[fillClass(pct)]; }
+
+  function shortName(v) {
+    var parts = String(v || "").trim().split(/\s+/);
+    if (parts.length >= 2 && /^[^\d]/.test(parts[1])) return parts[0] + " " + parts[1].charAt(0) + ".";
+    return v;
+  }
+
+  function greetingText() {
+    var h = new Date().getHours();
+    var g = h < 6 ? "Labos nakties" : h < 12 ? "Labas rytas" : h < 18 ? "Laba diena" : "Labas vakaras";
+    var name = S.me ? String(S.me.vardas).split(/\s+/)[0] : "";
+    return name ? g + ", " + name : g;
+  }
+  function todayLongLabel() {
+    var d = new Date();
+    return DAYS_LONG[(d.getDay() + 6) % 7].toLowerCase() + ", " + MONTHS_GEN[d.getMonth()] + " " + d.getDate() + " d.";
+  }
 
   var STATUS = { laukia: "Laukia", vykdoma: "Vykdoma", atlikta: "Atlikta" };
   var PRIO = { zemas: "Žemas", vidutinis: "Vidutinis", aukstas: "Aukštas" };
@@ -370,7 +391,7 @@
           "</div>" +
         "</div>" +
       "</header>" +
-      '<main class="main">' + migrationBannerHtml() + content + "</main>" +
+      '<main class="main' + (S.viewChanged ? " view-enter" : "") + '">' + migrationBannerHtml() + content + "</main>" +
       '<nav class="bottom-nav">' + bottomBtns + "</nav>";
   }
 
@@ -421,12 +442,47 @@
     var workingToday = {};
     S.shifts.forEach(function (s) { if (s.data === today) workingToday[s.darbuotojas_id] = true; });
     var wtCount = Object.keys(workingToday).length;
+    function val(n) { return '<div class="value" data-count="' + n + '">' + (S.viewChanged ? 0 : n) + "</div>"; }
     return '<div class="metrics">' +
-      '<div class="metric"><div class="label">Aktyvūs darbai</div><div class="value">' + active.length + "</div></div>" +
-      '<div class="metric"><div class="label">Nepriskirtos veiklos</div><div class="value">' + pool.length + '</div><div class="sub">' + (Math.round(poolHours * 10) / 10) + " val.</div></div>" +
-      '<div class="metric"><div class="label">Šiandien dirba</div><div class="value">' + wtCount + "</div></div>" +
-      '<div class="metric' + (late.length ? " alert" : "") + '"><div class="label">Vėluojantys darbai</div><div class="value">' + late.length + "</div></div>" +
+      '<div class="metric"><div class="label">Aktyvūs darbai</div>' + val(active.length) + "</div>" +
+      '<div class="metric"><div class="label">Nepriskirtos veiklos</div>' + val(pool.length) + '<div class="sub">' + (Math.round(poolHours * 10) / 10) + " val.</div></div>" +
+      '<div class="metric"><div class="label">Šiandien dirba</div>' + val(wtCount) + "</div>" +
+      '<div class="metric' + (late.length ? " alert" : "") + '"><div class="label">Vėluojantys darbai</div>' + val(late.length) + "</div>" +
     "</div>";
+  }
+
+  function ringHtml(emp, l, vac, size) {
+    size = size || 96;
+    var stroke = Math.round(size * 0.095);
+    var r = (size - stroke) / 2 - 1;
+    var c = 2 * Math.PI * r;
+    var pct = Math.min(100, l.pct);
+    var dash = (c * pct / 100).toFixed(1) + " " + c.toFixed(1);
+    var col = vac ? "#AEAEB2" : ringColor(l.pct);
+    var cx = size / 2;
+    return '<div class="ring" style="width:' + size + "px;height:" + size + 'px">' +
+      '<svg viewBox="0 0 ' + size + " " + size + '" width="' + size + '" height="' + size + '">' +
+        '<circle cx="' + cx + '" cy="' + cx + '" r="' + r + '" fill="none" stroke="var(--gray-soft)" stroke-width="' + stroke + '"/>' +
+        '<circle cx="' + cx + '" cy="' + cx + '" r="' + r + '" fill="none" stroke="' + col + '" stroke-width="' + stroke + '" stroke-linecap="round" stroke-dasharray="' + dash + '" transform="rotate(-90 ' + cx + " " + cx + ')" class="ring-arc"/>' +
+      "</svg>" +
+      '<div class="ring-pct">' + l.pct + '<span>%</span></div>' +
+    "</div>";
+  }
+
+  function loadRingsHtml() {
+    var today = todayIso();
+    var rows = activeEmployees().map(function (e) {
+      return { e: e, l: loadOf(e.id), vac: vacationOf(e.id, today) };
+    });
+    rows.sort(function (a, b) { return b.l.pct - a.l.pct; });
+    if (!rows.length) return '<div class="empty">Nėra darbuotojų.</div>';
+    return '<div class="ring-grid">' + rows.map(function (r) {
+      return '<div class="ring-item" data-action="goto-emp-tasks" data-id="' + r.e.id + '" title="Rodyti darbus">' +
+        ringHtml(r.e, r.l, r.vac) +
+        '<div class="ring-name">' + esc(shortName(r.e.vardas)) + "</div>" +
+        '<div class="ring-sub">' + (r.vac ? VAC_LABEL[r.vac.tipas] : r.l.hours + " / " + r.l.cap + " val.") + "</div>" +
+      "</div>";
+    }).join("") + "</div>";
   }
 
   function loadRowsHtml() {
@@ -488,12 +544,12 @@
   function viewApzvalga() {
     var pool = poolTasks();
     var mine = S.me ? S.tasks.filter(function (t) { return t.darbuotojas_id === S.me.id && t.statusas !== "atlikta"; }) : [];
-    var html = '<div class="view-title"><h1>Apžvalga</h1><div class="actions">' +
+    var html = '<div class="view-title"><div><h1>' + esc(greetingText()) + '</h1><div class="view-sub">' + todayLongLabel() + "</div></div><div class=\"actions\">" +
       '<button class="btn-outline desktop-only" data-action="tv-on">TV režimas</button>' +
       (isAdmin() ? '<button class="btn" data-action="new-task">+ Naujas darbas</button>' : "") +
       "</div></div>";
     html += metricsHtml();
-    html += '<div class="card"><h2>Komandos užkrova</h2><div class="hint" style="margin-bottom:8px">Aktyvių darbų valandos, palyginus su savaitės valandomis. Paspauskite eilutę — pamatysite žmogaus darbus.</div>' + loadRowsHtml() + "</div>";
+    html += '<div class="card"><h2>Komandos užkrova</h2><div class="hint" style="margin-bottom:14px">Aktyvių darbų valandos, palyginus su savaitės valandomis. Paspauskite žmogų — pamatysite jo darbus.</div>' + loadRingsHtml() + "</div>";
     html += '<div class="card"><h2>Bendros veiklos — dar nepriskirtos</h2>';
     if (pool.length) {
       html += pool.map(poolCardHtml).join("");
@@ -655,8 +711,10 @@
       '<button class="btn-outline btn-sm" data-action="week-next">›</button>' +
       '<button class="btn-ghost btn-sm" data-action="week-today">' + (S.schedMode === "week" ? "Ši savaitė" : "Šis mėnuo") + "</button>" +
       '<span style="flex:1"></span>' +
-      '<button class="btn-outline btn-sm' + (S.schedMode === "week" ? " active-toggle" : "") + '" data-action="sched-week">Savaitė</button>' +
-      '<button class="btn-outline btn-sm' + (S.schedMode === "month" ? " active-toggle" : "") + '" data-action="sched-month">Mėnuo</button>' +
+      '<div class="segmented">' +
+        '<button class="' + (S.schedMode === "week" ? "active" : "") + '" data-action="sched-week">Savaitė</button>' +
+        '<button class="' + (S.schedMode === "month" ? "active" : "") + '" data-action="sched-month">Mėnuo</button>' +
+      "</div>" +
     "</div></div>";
 
     if (S.schedMode === "month") {
@@ -1504,7 +1562,7 @@
     var dateLabel = gen.charAt(0).toUpperCase() + gen.slice(1) + " " + now.getDate() + " d., " + DAYS_LONG[(now.getDay() + 6) % 7].toLowerCase();
     var body;
     if (S.tvPanel === 0) {
-      body = '<h2 class="tv-title">Komandos užkrova</h2>' + loadRowsHtml();
+      body = '<h2 class="tv-title">Komandos užkrova</h2>' + loadRingsHtml();
     } else {
       var today = todayIso();
       var todays = S.shifts.filter(function (s) { return s.data === today; })
@@ -1662,6 +1720,9 @@
     }
     root.innerHTML = html;
 
+    if (S.viewChanged) { runCountUp(); }
+    S.viewChanged = false;
+
     if (focusId) {
       var el = document.getElementById(focusId);
       if (el) {
@@ -1672,6 +1733,25 @@
 
     if (!S.session) bindAuthForm();
     else if (S.recovery) bindRecoveryForm();
+  }
+
+  function runCountUp() {
+    var els = document.querySelectorAll('.metric .value[data-count]');
+    for (var i = 0; i < els.length; i++) {
+      (function (el) {
+        var target = Number(el.getAttribute("data-count")) || 0;
+        if (target <= 0) { el.textContent = "0"; return; }
+        var dur = 650, t0 = null;
+        function step(ts) {
+          if (t0 === null) t0 = ts;
+          var p = Math.min(1, (ts - t0) / dur);
+          var eased = 1 - Math.pow(1 - p, 3);
+          el.textContent = Math.round(target * eased);
+          if (p < 1) requestAnimationFrame(step); else el.textContent = target;
+        }
+        requestAnimationFrame(step);
+      })(els[i]);
+    }
   }
 
   function bindAuthForm() {
@@ -1719,7 +1799,9 @@
 
     switch (action) {
       case "nav":
-        S.view = el.getAttribute("data-view");
+        var nv = el.getAttribute("data-view");
+        if (nv !== S.view) S.viewChanged = true;
+        S.view = nv;
         render();
         window.scrollTo(0, 0);
         break;
