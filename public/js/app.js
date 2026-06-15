@@ -331,6 +331,13 @@
       .map(function (e) { return { darbuotojas_id: e.id, tekstas: tekstas, vaizdas: vaizdas || "darbai" }; });
     API.addNotifications(list).catch(function () {});
   }
+  // Pranešimas visai aktyviai komandai (išskyrus save).
+  function notifyEveryone(tekstas, vaizdas) {
+    var list = activeEmployees()
+      .filter(function (e) { return !S.me || e.id !== S.me.id; })
+      .map(function (e) { return { darbuotojas_id: e.id, tekstas: tekstas, vaizdas: vaizdas || "darbai" }; });
+    if (list.length) API.addNotifications(list).catch(function () {});
+  }
 
   function vacationOf(empId, dateIso) {
     for (var i = 0; i < S.vacations.length; i++) {
@@ -805,8 +812,9 @@
         var tItems = tasksDueOn(e.id, dIso).map(function (t) {
           return '<span class="task-pill prio-' + esc(t.prioritetas) + '" data-action="open-task" data-id="' + t.id + '" title="Darbo terminas">⚑ ' + esc(t.pavadinimas) + "</span>";
         }).join("");
+        var negHtml = (!vac && resolveAvail(e.id, dIso, ((d.getDay() + 6) % 7) + 1).nedirba) ? '<span class="shift-pill neg-pill">Negaliu</span>' : "";
         var add = (canRow && !vac) ? '<button class="cell-add" data-action="new-shift" data-emp="' + e.id + '" data-date="' + dIso + '" title="Pridėti">+</button>' : "";
-        return "<td class='" + (dIso === today ? "today" : "") + "'>" + vacHtml + items + tItems + add + "</td>";
+        return "<td class='" + (dIso === today ? "today" : "") + "'>" + vacHtml + negHtml + items + tItems + add + "</td>";
       }).join("");
       return "<tr><td class='emp-cell'>" + esc(e.vardas) + '<span class="role">' + esc(e.pareigos || "") + "</span></td>" + cells + "</tr>";
     }).join("");
@@ -839,6 +847,11 @@
     var vacLine = vacToday.length
       ? '<div class="hint" style="margin-bottom:8px">Nedirba: ' + vacToday.map(function (e) { return esc(e.vardas); }).join(", ") + "</div>"
       : "";
+    var selWd = ((days[S.selDay].getDay() + 6) % 7) + 1;
+    var negToday = emps.filter(function (e) { return !vacationOf(e.id, selIso) && resolveAvail(e.id, selIso, selWd).nedirba; });
+    var negLine = negToday.length
+      ? '<div class="hint" style="margin-bottom:8px;color:var(--red)">Pasižymėjo „negaliu": ' + negToday.map(function (e) { return esc(e.vardas); }).join(", ") + "</div>"
+      : "";
 
     var dayTasksM = S.tasks.filter(function (t) { return t.terminas === selIso && t.statusas !== "atlikta"; });
     var taskListM = dayTasksM.length ? '<div class="section-label">Darbų terminai</div>' + dayTasksM.map(function (t) {
@@ -849,7 +862,7 @@
     }).join("") : "";
 
     html += '<div class="mobile-only"><div class="day-chips">' + chips + "</div>" +
-      '<div class="card"><h2>' + DAYS_LONG[S.selDay] + ", " + MONTHS_GEN[days[S.selDay].getMonth()] + " " + days[S.selDay].getDate() + " d.</h2>" + vacLine + dayList + taskListM +
+      '<div class="card"><h2>' + DAYS_LONG[S.selDay] + ", " + MONTHS_GEN[days[S.selDay].getMonth()] + " " + days[S.selDay].getDate() + " d.</h2>" + vacLine + negLine + dayList + taskListM +
       '<button class="btn-outline btn-sm" data-action="new-shift" data-date="' + selIso + '" style="margin-top:8px">+ Pridėti įrašą</button>' +
       "</div></div>";
 
@@ -991,9 +1004,10 @@
       if (ov.some(function (a) { return a.nedirba; })) return { type: "override", nedirba: true, blocks: [] };
       return { type: "override", nedirba: false, blocks: ov.filter(function (a) { return a.nuo; }).sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; }) };
     }
-    var tmpl = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === wd; })
-      .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
-    if (tmpl.length) return { type: "sablonas", nedirba: false, blocks: tmpl };
+    var tmpl = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === wd; });
+    if (tmpl.some(function (t) { return t.nedirba; })) return { type: "sablonas", nedirba: true, blocks: [] };
+    var tb = tmpl.filter(function (t) { return t.nuo; }).sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
+    if (tb.length) return { type: "sablonas", nedirba: false, blocks: tb };
     return { type: "none", nedirba: false, blocks: [] };
   }
 
@@ -1013,7 +1027,7 @@
     var html = '<div class="view-title"><div><h1>Prieinamumas</h1><div class="view-sub">Kada gali dirbti ar vesti veiklas</div></div></div>';
 
     html += '<div class="avail-controls">';
-    if (editable.length > 1) {
+    if (editable.length > 1 && S.availMode !== "visi") {
       html += '<select class="avail-emp-sel" data-change="avail-emp">' + editable.map(function (e) {
         return '<option value="' + e.id + '"' + (e.id === empId ? " selected" : "") + ">" + esc(e.vardas) + (e.id === S.me.id ? " (aš)" : "") + "</option>";
       }).join("") + "</select>";
@@ -1021,20 +1035,45 @@
     html += '<div class="segmented avail-seg">' +
       '<button class="' + (S.availMode === "savaite" ? "active" : "") + '" data-action="avail-mode" data-m="savaite">Savaitė</button>' +
       '<button class="' + (S.availMode === "sablonas" ? "active" : "") + '" data-action="avail-mode" data-m="sablonas">Šablonas</button>' +
+      '<button class="' + (S.availMode === "visi" ? "active" : "") + '" data-action="avail-mode" data-m="visi">Visų darbotvarkė</button>' +
     "</div></div>";
 
     if (S.availMode === "sablonas") {
       html += '<div class="hint" style="margin-bottom:12px">Šablonas galioja <b>kas savaitę</b>. Konkrečią savaitę gali pakoreguoti atskirai (skiltis „Savaitė").</div>';
       html += '<div class="avail-grid">';
       for (var wd = 1; wd <= 7; wd++) {
-        var tb = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === wd; })
-          .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
+        var wdT = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === wd; });
+        var wdNeg = wdT.some(function (t) { return t.nedirba; });
+        var tb = wdT.filter(function (t) { return t.nuo; }).sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
         html += '<div class="avail-day"><div class="avail-day-h">' + DAYS_LONG[wd - 1] + "</div>" +
-          (tb.length ? tb.map(function (b) { return availBlockHtml(b, canEdit, "tmpl"); }).join("") : '<div class="avail-empty">—</div>') +
-          (canEdit ? '<button class="btn-ghost btn-sm avail-addbtn" data-action="avail-add" data-emp="' + empId + '" data-wd="' + wd + '">+ Laikas</button>' : "") +
+          (wdNeg ? '<div class="avail-block neg">Negaliu</div>'
+                 : (tb.length ? tb.map(function (b) { return availBlockHtml(b, canEdit, "tmpl"); }).join("") : '<div class="avail-empty">—</div>')) +
+          (canEdit ? '<div class="avail-actions">' +
+            (wdNeg
+              ? '<button class="btn-ghost btn-sm" data-action="avail-tmpl-reset" data-emp="' + empId + '" data-wd="' + wd + '">Galiu vėl</button>'
+              : '<button class="btn-ghost btn-sm" data-action="avail-add" data-emp="' + empId + '" data-wd="' + wd + '">+ Laikas</button>' +
+                '<button class="btn-ghost btn-sm" data-action="avail-tmpl-negaliu" data-emp="' + empId + '" data-wd="' + wd + '">Negaliu</button>') +
+          "</div>" : "") +
         "</div>";
       }
       html += "</div>";
+    } else if (S.availMode === "visi") {
+      html += '<div class="hint" style="margin-bottom:12px">Visų narių kassavaitiniai šablonai — kada paprastai gali. Redaguojama skiltyse „Savaitė" ir „Šablonas".</div>';
+      var headCols = "";
+      for (var wh = 0; wh < 7; wh++) headCols += "<th>" + DAYS_SHORT[wh] + "</th>";
+      var daRows = activeEmployees().map(function (e2) {
+        var tds = "";
+        for (var wc = 1; wc <= 7; wc++) {
+          var wt = S.availTemplate.filter(function (t) { return t.darbuotojas_id === e2.id && t.savaite_diena === wc; });
+          var neg = wt.some(function (t) { return t.nedirba; });
+          var bl = wt.filter(function (t) { return t.nuo; }).sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
+          var cell = neg ? '<span class="da-neg">Negaliu</span>'
+            : (bl.length ? bl.map(function (b) { return '<span class="da-blk">' + esc(String(b.nuo).slice(0, 5)) + "–" + esc(String(b.iki).slice(0, 5)) + "</span>"; }).join("") : '<span class="da-empty">—</span>');
+          tds += "<td>" + cell + "</td>";
+        }
+        return '<tr><td class="da-emp">' + esc(shortName(e2.vardas)) + "</td>" + tds + "</tr>";
+      }).join("");
+      html += '<div class="card" style="overflow-x:auto"><table class="da-table"><tr><th>Narys</th>' + headCols + "</tr>" + daRows + "</table></div>";
     } else {
       var mon = startOfWeek(S.availWeekOffset);
       html += '<div class="card" style="margin-bottom:14px"><div class="week-nav"><div class="wn-left">' +
@@ -1214,6 +1253,7 @@
           "</select></div>" +
         "</div>" +
         '<div class="form-row"><label>Aprašymas</label><textarea name="aprasymas">' + esc(t.aprasymas || "") + "</textarea></div>" +
+        (isNew ? '<div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="pranesti_visiems" style="width:auto"> Pranešti visiems (visa komanda gaus pranešimą)</label></div>' : "") +
         '<div class="form-error" id="task-err"></div>' +
         '<div class="modal-actions">' +
           (!isNew && canEditTask(task) ? '<button type="button" class="btn-ghost left" id="task-del" style="color:var(--red)">Ištrinti</button>' : "") +
@@ -1239,6 +1279,7 @@
         aprasymas: String(fd.get("aprasymas") || "").trim()
       };
       if (!obj.pavadinimas) return;
+      var notifyAll = fd.get("pranesti_visiems") === "on";
       if (obj.statusas === "atlikta") {
         if (isNew || task.statusas !== "atlikta") obj.atlikta_at = new Date().toISOString();
       } else {
@@ -1252,7 +1293,7 @@
         try {
           for (var i = 0; i < emps.length; i++) {
             await API.addTask(Object.assign({}, base, { darbuotojas_id: emps[i].id }));
-            notifyUser(emps[i].id, "Jums priskirta veikla: „" + obj.pavadinimas + "“", "darbai");
+            if (notifyAll) notifyUser(emps[i].id, "Jums priskirta veikla: „" + obj.pavadinimas + "“", "darbai");
           }
           toast("Priskirta visai komandai (" + emps.length + ")");
           closeModal();
@@ -1271,6 +1312,7 @@
         if (obj.darbuotojas_id && obj.darbuotojas_id !== prevAssignee) {
           notifyUser(obj.darbuotojas_id, "Jums priskirtas darbas: „" + obj.pavadinimas + "“", "darbai");
         }
+        if (notifyAll) notifyEveryone("Nauja veikla: „" + obj.pavadinimas + "“" + (obj.terminas ? " (iki " + obj.terminas + ")" : ""), "darbai");
         closeModal();
       }
     });
@@ -2426,6 +2468,24 @@
         var rEmp = el.getAttribute("data-emp"), rDate = el.getAttribute("data-date");
         (async function () {
           try { await API.clearAvailabilityForDate(rEmp, rDate); toast("Grąžinta į šabloną"); await refreshData(); }
+          catch (e) { toast(e.message || "Nepavyko"); }
+        })();
+        break;
+      }
+      case "avail-tmpl-negaliu": {
+        var tnEmp = el.getAttribute("data-emp"), tnWd = Number(el.getAttribute("data-wd"));
+        (async function () {
+          try {
+            await API.clearAvailTemplateForWeekday(tnEmp, tnWd);
+            await mutate(API.addAvailTemplate({ darbuotojas_id: tnEmp, savaite_diena: tnWd, nuo: null, iki: null, nedirba: true }), "Pažymėta: tą dieną negaliu");
+          } catch (e) { toast(e.message || "Nepavyko"); }
+        })();
+        break;
+      }
+      case "avail-tmpl-reset": {
+        var trEmp = el.getAttribute("data-emp"), trWd = Number(el.getAttribute("data-wd"));
+        (async function () {
+          try { await API.clearAvailTemplateForWeekday(trEmp, trWd); toast("Atstatyta"); await refreshData(); }
           catch (e) { toast(e.message || "Nepavyko"); }
         })();
         break;

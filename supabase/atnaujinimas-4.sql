@@ -12,12 +12,16 @@ create table if not exists public.prieinamumas_sablonas (
   id uuid primary key default gen_random_uuid(),
   darbuotojas_id uuid not null references public.darbuotojai(id) on delete cascade,
   savaite_diena smallint not null check (savaite_diena between 1 and 7),
-  nuo time not null,
-  iki time not null,
-  created_at timestamptz not null default now(),
-  check (iki > nuo)
+  nuo time,
+  iki time,
+  nedirba boolean not null default false,
+  created_at timestamptz not null default now()
 );
 create index if not exists idx_prieinamumas_sablonas_darb on public.prieinamumas_sablonas(darbuotojas_id);
+-- Jei lentelė buvo sukurta senesniu variantu — pritaikom „negaliu" žymai (saugu kartoti):
+alter table public.prieinamumas_sablonas alter column nuo drop not null;
+alter table public.prieinamumas_sablonas alter column iki drop not null;
+alter table public.prieinamumas_sablonas add column if not exists nedirba boolean not null default false;
 
 -- Konkrečios datos pakoregavimai. nedirba=true reiškia „tą dieną negaliu".
 create table if not exists public.prieinamumas (

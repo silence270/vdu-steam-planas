@@ -542,6 +542,17 @@ window.API = (function () {
       d.prieinamumas = d.prieinamumas.filter(function (x) { return !(x.darbuotojas_id === empId && x.data === dateIso); });
     });
   }
+  // Pašalina visus šablono įrašus tai savaitės dienai (perrašant „negaliu" / iš naujo).
+  async function clearAvailTemplateForWeekday(empId, wd) {
+    if (mode === "supabase") {
+      var res = await sb.from("prieinamumas_sablonas").delete().eq("darbuotojas_id", empId).eq("savaite_diena", wd);
+      if (res.error) throw new Error("Nepavyko: " + res.error.message);
+      return;
+    }
+    return demoMutate(function (d) {
+      d.prieinamumas_sablonas = d.prieinamumas_sablonas.filter(function (x) { return !(x.darbuotojas_id === empId && x.savaite_diena === wd); });
+    });
+  }
 
   // ---------- gyvas atsinaujinimas ----------
 
@@ -644,6 +655,7 @@ window.API = (function () {
     addAvailability: addAvailability,
     deleteAvailability: deleteAvailability,
     clearAvailabilityForDate: clearAvailabilityForDate,
+    clearAvailTemplateForWeekday: clearAvailTemplateForWeekday,
     subscribe: subscribe
   };
 })();
