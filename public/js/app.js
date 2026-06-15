@@ -189,11 +189,21 @@
     return S.employees.filter(function (e) { return e.aktyvus; });
   }
   function isAdmin() { return !!(S.me && S.me.role === "admin"); }
+  // Ar dabartinis vartotojas kuruoja darbuotoją empId (gali valdyti jo darbus/grafiką)?
+  function managesEmp(empId) {
+    if (!S.me || !empId) return false;
+    var e = getEmp(empId);
+    return !!(e && e.kuratorius_id && e.kuratorius_id === S.me.id);
+  }
+  // Ar vartotojas gali valdyti šio darbuotojo įrašus (admin / pats / kuratorius)?
+  function canManageEmp(empId) {
+    return isAdmin() || (S.me && (S.me.id === empId || managesEmp(empId)));
+  }
   function canEditTask(t) {
-    return isAdmin() || (S.me && t.darbuotojas_id === S.me.id);
+    return isAdmin() || (S.me && (t.darbuotojas_id === S.me.id || managesEmp(t.darbuotojas_id)));
   }
   function canEditShift(s) {
-    return isAdmin() || (S.me && s.darbuotojas_id === S.me.id);
+    return isAdmin() || (S.me && (s.darbuotojas_id === S.me.id || managesEmp(s.darbuotojas_id)));
   }
 
   function loadOf(empId) {
@@ -729,7 +739,7 @@
     }).join("") + "</tr>";
 
     var tbody = emps.map(function (e) {
-      var canRow = isAdmin() || (S.me && S.me.id === e.id);
+      var canRow = canManageEmp(e.id);
       var cells = days.map(function (d) {
         var dIso = isoFromDate(d);
         var vac = vacationOf(e.id, dIso);
@@ -860,7 +870,7 @@
   function teamCardHtml(e) {
     var l = loadOf(e.id);
     var vac = vacationOf(e.id, todayIso());
-    var canVac = isAdmin() || (S.me && S.me.id === e.id);
+    var canVac = canManageEmp(e.id);
     return '<div class="team-card">' +
       '<div class="head">' + avatarHtml(e, true) +
         '<div style="min-width:0"><div class="name">' + esc(e.vardas) + (e.role === "admin" ? ' <span class="chip chip-primary">Admin</span>' : "") +
@@ -926,7 +936,15 @@
   function empSelectOptions(selectedId, includeNone, includeAll) {
     var opts = includeNone ? '<option value="">— Nepriskirta (bendra veikla) —</option>' : "";
     if (includeAll) opts += '<option value="__ALL__"' + (selectedId === "__ALL__" ? " selected" : "") + ">— Visi darbuotojai (kiekvienam po kopiją) —</option>";
-    var list = isAdmin() ? activeEmployees() : (S.me ? [S.me] : []);
+    var list;
+    if (isAdmin()) {
+      list = activeEmployees();
+    } else if (S.me) {
+      // pats + kuruojami darbuotojai
+      list = [S.me].concat(activeEmployees().filter(function (e) { return e.id !== S.me.id && managesEmp(e.id); }));
+    } else {
+      list = [];
+    }
     opts += list.map(function (e) {
       return '<option value="' + e.id + '"' + (selectedId === e.id ? " selected" : "") + ">" + esc(e.vardas) + "</option>";
     }).join("");
@@ -1312,7 +1330,7 @@
   }
 
   function vacationsModal(emp) {
-    var canEdit = isAdmin() || (S.me && S.me.id === emp.id);
+    var canEdit = canManageEmp(emp.id);
     var list = S.vacations.filter(function (v) { return v.darbuotojas_id === emp.id; })
       .sort(function (a, b) { return a.nuo < b.nuo ? 1 : -1; });
     var items = list.length ? list.map(function (v) {
