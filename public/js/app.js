@@ -30,7 +30,12 @@
     teamQ: "",
     viewChanged: true,
     realMe: null,
-    viewAsId: null
+    viewAsId: null,
+    availability: [],
+    availTemplate: [],
+    availEmpId: null,
+    availMode: "savaite",
+    availWeekOffset: 0
   };
 
   var RING_COLORS = { "fill-low": "#AEAEB2", "fill-ok": "#34C759", "fill-warn": "#FF9F0A", "fill-high": "#FF453A" };
@@ -80,13 +85,15 @@
     apzvalga: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="12" width="4" height="8" rx="1"/><rect x="10" y="7" width="4" height="13" rx="1"/><rect x="17" y="3" width="4" height="17" rx="1"/></svg>',
     tvarkarastis: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
     darbai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>',
-    komanda: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6c2.5.3 4.4 1.9 5 4.4"/></svg>'
+    komanda: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6c2.5.3 4.4 1.9 5 4.4"/></svg>',
+    prieinamumas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3 2"/></svg>'
   };
 
   var VIEWS = [
     { id: "apzvalga", label: "Apžvalga" },
     { id: "tvarkarastis", label: "Tvarkaraštis" },
     { id: "darbai", label: "Darbai" },
+    { id: "prieinamumas", label: "Prieinamumas" },
     { id: "komanda", label: "Komanda" }
   ];
 
@@ -273,6 +280,8 @@
     S.comments = data.comments || [];
     S.notifications = data.notifications || [];
     S.vacations = data.vacations || [];
+    S.availability = data.availability || [];
+    S.availTemplate = data.availTemplate || [];
     S.migrationNeeded = !!data.migrationNeeded;
     resolveMe();
     detectNewNotifications();
@@ -947,6 +956,140 @@
       html += '<div class="section-label">Neaktyvūs</div><div class="team-grid">' + inact.map(teamCardHtml).join("") + "</div>";
     }
     return html;
+  }
+
+  // ---------- Prieinamumas ----------
+
+  function availEditableEmps() {
+    var list = activeEmployees();
+    if (isAdmin()) return list;
+    if (!S.me) return [];
+    return list.filter(function (e) { return e.id === S.me.id || managesEmp(e.id); });
+  }
+  function weekdayOfIso(iso) { return ((dateFromIso(iso).getDay() + 6) % 7) + 1; }
+
+  function resolveAvail(empId, dateIso, wd) {
+    var ov = S.availability.filter(function (a) { return a.darbuotojas_id === empId && a.data === dateIso; });
+    if (ov.length) {
+      if (ov.some(function (a) { return a.nedirba; })) return { type: "override", nedirba: true, blocks: [] };
+      return { type: "override", nedirba: false, blocks: ov.filter(function (a) { return a.nuo; }).sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; }) };
+    }
+    var tmpl = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === wd; })
+      .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
+    if (tmpl.length) return { type: "sablonas", nedirba: false, blocks: tmpl };
+    return { type: "none", nedirba: false, blocks: [] };
+  }
+
+  function availBlockHtml(b, canDel, kind) {
+    return '<div class="avail-block' + (kind === "sablonas" ? " tmpl" : "") + '">' +
+      "<span>" + esc(String(b.nuo).slice(0, 5)) + "–" + esc(String(b.iki).slice(0, 5)) + "</span>" +
+      (canDel ? '<button class="avail-x" data-action="avail-del" data-id="' + b.id + '" data-kind="' + (kind === "tmpl" ? "tmpl" : "date") + '" title="Pašalinti">×</button>' : "") +
+    "</div>";
+  }
+
+  function viewPrieinamumas() {
+    if (!S.me) return "";
+    var editable = availEditableEmps();
+    var empId = (S.availEmpId && editable.some(function (e) { return e.id === S.availEmpId; })) ? S.availEmpId : S.me.id;
+    var canEdit = canManageEmp(empId);
+
+    var html = '<div class="view-title"><div><h1>Prieinamumas</h1><div class="view-sub">Kada gali dirbti ar vesti veiklas</div></div></div>';
+
+    html += '<div class="avail-controls">';
+    if (editable.length > 1) {
+      html += '<select class="avail-emp-sel" data-change="avail-emp">' + editable.map(function (e) {
+        return '<option value="' + e.id + '"' + (e.id === empId ? " selected" : "") + ">" + esc(e.vardas) + (e.id === S.me.id ? " (aš)" : "") + "</option>";
+      }).join("") + "</select>";
+    }
+    html += '<div class="segmented avail-seg">' +
+      '<button class="' + (S.availMode === "savaite" ? "active" : "") + '" data-action="avail-mode" data-m="savaite">Savaitė</button>' +
+      '<button class="' + (S.availMode === "sablonas" ? "active" : "") + '" data-action="avail-mode" data-m="sablonas">Šablonas</button>' +
+    "</div></div>";
+
+    if (S.availMode === "sablonas") {
+      html += '<div class="hint" style="margin-bottom:12px">Šablonas galioja <b>kas savaitę</b>. Konkrečią savaitę gali pakoreguoti atskirai (skiltis „Savaitė").</div>';
+      html += '<div class="avail-grid">';
+      for (var wd = 1; wd <= 7; wd++) {
+        var tb = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === wd; })
+          .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
+        html += '<div class="avail-day"><div class="avail-day-h">' + DAYS_LONG[wd - 1] + "</div>" +
+          (tb.length ? tb.map(function (b) { return availBlockHtml(b, canEdit, "tmpl"); }).join("") : '<div class="avail-empty">—</div>') +
+          (canEdit ? '<button class="btn-ghost btn-sm avail-addbtn" data-action="avail-add" data-emp="' + empId + '" data-wd="' + wd + '">+ Laikas</button>' : "") +
+        "</div>";
+      }
+      html += "</div>";
+    } else {
+      var mon = startOfWeek(S.availWeekOffset);
+      html += '<div class="card" style="margin-bottom:14px"><div class="week-nav"><div class="wn-left">' +
+        '<button class="btn-outline btn-sm wn-arrow" data-action="avail-week-prev">‹</button>' +
+        '<span class="range">' + esc(weekRangeLabel(mon)) + (S.availWeekOffset === 0 ? " · ši savaitė" : "") + "</span>" +
+        '<button class="btn-outline btn-sm wn-arrow" data-action="avail-week-next">›</button>' +
+        '<button class="btn-ghost btn-sm" data-action="avail-week-today">Ši savaitė</button>' +
+      "</div></div></div>";
+      html += '<div class="avail-grid">';
+      for (var i = 0; i < 7; i++) {
+        var d = addDays(mon, i);
+        var iso = isoFromDate(d);
+        var r = resolveAvail(empId, iso, i + 1);
+        var inner;
+        if (r.nedirba) inner = '<div class="avail-block neg">Negaliu</div>';
+        else if (r.blocks.length) {
+          inner = r.blocks.map(function (b) { return availBlockHtml(b, canEdit && r.type === "override", r.type); }).join("");
+          if (r.type === "sablonas") inner += '<div class="avail-tag">pagal šabloną</div>';
+        } else inner = '<div class="avail-empty">—</div>';
+        html += '<div class="avail-day' + (iso === todayIso() ? " today" : "") + '">' +
+          '<div class="avail-day-h">' + DAYS_SHORT[i] + " <span>" + d.getDate() + "</span></div>" + inner +
+          (canEdit ? '<div class="avail-actions">' +
+            '<button class="btn-ghost btn-sm" data-action="avail-add" data-emp="' + empId + '" data-date="' + iso + '">+ Laikas</button>' +
+            (r.nedirba || r.type === "override"
+              ? '<button class="btn-ghost btn-sm" data-action="avail-reset" data-emp="' + empId + '" data-date="' + iso + '">Pagal šabloną</button>'
+              : '<button class="btn-ghost btn-sm" data-action="avail-negaliu" data-emp="' + empId + '" data-date="' + iso + '">Negaliu</button>') +
+          "</div>" : "") +
+        "</div>";
+      }
+      html += "</div>";
+    }
+    if (!canEdit) html += '<div class="hint" style="margin-top:12px">Šio žmogaus prieinamumą keisti gali tik jis pats, kuratorius arba administratorius.</div>';
+    return html;
+  }
+
+  function availAddModal(empId, opts) {
+    var ov = openModal(
+      "<h2>Pridėti laiką</h2>" +
+      '<form id="avail-form"><div class="form-grid">' +
+        '<div class="form-row"><label>Nuo</label><input type="time" name="nuo" required value="09:00"></div>' +
+        '<div class="form-row"><label>Iki</label><input type="time" name="iki" required value="12:00"></div>' +
+      "</div>" +
+      '<div class="form-error" id="avail-err"></div>' +
+      '<div class="modal-actions"><button type="button" class="btn-outline" data-action="close-modal">Atšaukti</button>' +
+      '<button type="submit" class="btn">Pridėti</button></div></form>'
+    );
+    ov.querySelector("#avail-form").addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      var fd = new FormData(ev.target);
+      var nuo = String(fd.get("nuo") || ""), iki = String(fd.get("iki") || "");
+      var err = ov.querySelector("#avail-err");
+      if (!nuo || !iki || iki <= nuo) { err.textContent = "Pabaiga turi būti vėlesnė už pradžią."; return; }
+      try {
+        if (opts.wd) {
+          await API.addAvailTemplate({ darbuotojas_id: empId, savaite_diena: opts.wd, nuo: nuo, iki: iki });
+        } else {
+          var hasOv = S.availability.some(function (a) { return a.darbuotojas_id === empId && a.data === opts.date; });
+          if (!hasOv) {
+            var tmpl = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === weekdayOfIso(opts.date); });
+            for (var k = 0; k < tmpl.length; k++) {
+              await API.addAvailability({ darbuotojas_id: empId, data: opts.date, nuo: tmpl[k].nuo, iki: tmpl[k].iki, nedirba: false });
+            }
+          }
+          await API.addAvailability({ darbuotojas_id: empId, data: opts.date, nuo: nuo, iki: iki, nedirba: false });
+        }
+        closeModal();
+        toast("Pridėta");
+        await refreshData();
+      } catch (e) {
+        err.textContent = e.message || "Nepavyko";
+      }
+    });
   }
 
   // ---------- Modalai ----------
@@ -1881,6 +2024,7 @@
       if (S.view === "apzvalga") content = viewApzvalga();
       else if (S.view === "tvarkarastis") content = viewTvarkarastis();
       else if (S.view === "darbai") content = viewDarbai();
+      else if (S.view === "prieinamumas") content = viewPrieinamumas();
       else if (S.view === "komanda") content = viewKomanda();
       html = shellHtml(content);
     }
@@ -2179,6 +2323,40 @@
         render();
         window.scrollTo(0, 0);
         break;
+      case "avail-mode":
+        S.availMode = el.getAttribute("data-m") || "savaite";
+        render();
+        break;
+      case "avail-week-prev": S.availWeekOffset--; render(); break;
+      case "avail-week-next": S.availWeekOffset++; render(); break;
+      case "avail-week-today": S.availWeekOffset = 0; render(); break;
+      case "avail-add":
+        availAddModal(el.getAttribute("data-emp"), el.getAttribute("data-wd")
+          ? { wd: Number(el.getAttribute("data-wd")) }
+          : { date: el.getAttribute("data-date") });
+        break;
+      case "avail-del":
+        if (el.getAttribute("data-kind") === "tmpl") mutate(API.deleteAvailTemplate(id), "Pašalinta");
+        else mutate(API.deleteAvailability(id), "Pašalinta");
+        break;
+      case "avail-negaliu": {
+        var nEmp = el.getAttribute("data-emp"), nDate = el.getAttribute("data-date");
+        (async function () {
+          try {
+            await API.clearAvailabilityForDate(nEmp, nDate);
+            await mutate(API.addAvailability({ darbuotojas_id: nEmp, data: nDate, nuo: null, iki: null, nedirba: true }), "Pažymėta: negaliu");
+          } catch (e) { toast(e.message || "Nepavyko"); }
+        })();
+        break;
+      }
+      case "avail-reset": {
+        var rEmp = el.getAttribute("data-emp"), rDate = el.getAttribute("data-date");
+        (async function () {
+          try { await API.clearAvailabilityForDate(rEmp, rDate); toast("Grąžinta į šabloną"); await refreshData(); }
+          catch (e) { toast(e.message || "Nepavyko"); }
+        })();
+        break;
+      }
     }
   });
 
@@ -2201,6 +2379,9 @@
       render();
     } else if (what === "filter-kat") {
       S.filters.kat = el.value;
+      render();
+    } else if (what === "avail-emp") {
+      S.availEmpId = el.value;
       render();
     }
   });

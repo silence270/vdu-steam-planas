@@ -612,3 +612,28 @@ input[type="range"]::-webkit-slider-thumb {
   .tv-stats { grid-template-columns: repeat(2, 1fr); }
   .tv-grid { grid-template-columns: 1fr; }
 }
+
+/* Prieinamumas */
+.avail-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.avail-emp-sel { padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 15px; min-width: 200px; }
+.avail-seg { margin-left: auto; }
+.avail-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+.avail-day { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 6px; min-height: 124px; box-shadow: var(--shadow-sm); }
+.avail-day.today { border-color: var(--primary); }
+.avail-day-h { font-weight: 700; font-size: 14px; color: var(--muted); }
+.avail-day-h span { color: var(--text); }
+.avail-block { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: var(--primary-soft); color: var(--primary-dark); border-radius: 9px; padding: 5px 9px; font-size: 13px; font-weight: 600; }
+.avail-block.tmpl { background: var(--gray-soft); color: var(--muted); }
+.avail-block.neg { background: var(--red-soft); color: var(--red); justify-content: center; }
+.avail-x { border: none; background: transparent; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; opacity: .6; padding: 0 2px; }
+.avail-x:hover { opacity: 1; }
+.avail-empty { color: var(--muted); opacity: .4; text-align: center; padding: 6px 0; }
+.avail-tag { font-size: 11px; color: var(--muted); text-align: center; }
+.avail-actions { margin-top: auto; display: flex; flex-direction: column; gap: 2px; }
+.avail-actions .btn-ghost { justify-content: flex-start; padding: 4px 6px; font-size: 12px; }
+.avail-addbtn { margin-top: auto; }
+@media (max-width: 760px) {
+  .avail-grid { grid-template-columns: 1fr; }
+  .avail-day { min-height: auto; }
+  .avail-seg { margin-left: 0; width: 100%; }
+}

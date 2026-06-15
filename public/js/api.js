@@ -15,7 +15,7 @@ window.API = (function () {
   // Ar duomenų bazėje jau yra naujesni stulpeliai/lentelės (atnaujinimas-1.sql).
   // Optimistiškai true; fetchAll patikslina. Jei dar ne — appsas nemeta klaidų,
   // tik tų funkcijų neleidžia, kol adminas paleidžia atnaujinimą.
-  var caps = { taskExtras: true, extraTables: true };
+  var caps = { taskExtras: true, extraTables: true, availability: true };
 
   var DEMO_KEY = "steamPlanas.demo.v1";
   var DEMO_USER_KEY = "steamPlanas.demoUser";
@@ -144,7 +144,8 @@ window.API = (function () {
 
     return {
       version: 1, employees: employees, tasks: tasks, shifts: shifts,
-      komentarai: komentarai, pranesimai: pranesimai, atostogos: atostogos
+      komentarai: komentarai, pranesimai: pranesimai, atostogos: atostogos,
+      prieinamumas_sablonas: [], prieinamumas: []
     };
   }
 
@@ -159,6 +160,8 @@ window.API = (function () {
           parsed.komentarai = parsed.komentarai || [];
           parsed.pranesimai = parsed.pranesimai || [];
           parsed.atostogos = parsed.atostogos || [];
+          parsed.prieinamumas_sablonas = parsed.prieinamumas_sablonas || [];
+          parsed.prieinamumas = parsed.prieinamumas || [];
           return parsed;
         }
       }
@@ -280,6 +283,19 @@ window.API = (function () {
       var colProbe = await sb.from("uzduotys").select("atlikta_at, kategorija").limit(1);
       caps.taskExtras = !colProbe.error;
       caps.extraTables = !migrationNeeded;
+      // Prieinamumas (atnaujinimas-4) — jei lentelių dar nėra, tyliai praleidžiam.
+      var avail = await Promise.all([
+        sb.from("prieinamumas_sablonas").select("*"),
+        sb.from("prieinamumas").select("*")
+      ]);
+      caps.availability = !avail[0].error && !avail[1].error;
+      function trimT(rows) {
+        return (rows || []).map(function (r) {
+          if (r.nuo != null) r.nuo = String(r.nuo).slice(0, 5);
+          if (r.iki != null) r.iki = String(r.iki).slice(0, 5);
+          return r;
+        });
+      }
       return {
         employees: results[0].data || [],
         tasks: results[1].data || [],
@@ -291,6 +307,8 @@ window.API = (function () {
         comments: extras[0].data || [],
         notifications: extras[1].data || [],
         vacations: extras[2].data || [],
+        availTemplate: trimT(avail[0].data),
+        availability: trimT(avail[1].data),
         migrationNeeded: migrationNeeded || !caps.taskExtras
       };
     }
@@ -300,6 +318,7 @@ window.API = (function () {
     return {
       employees: d.employees.slice(), tasks: d.tasks.slice(), shifts: d.shifts.slice(),
       comments: d.komentarai.slice(), notifications: d.pranesimai.slice(), vacations: d.atostogos.slice(),
+      availTemplate: d.prieinamumas_sablonas.slice(), availability: d.prieinamumas.slice(),
       migrationNeeded: false
     };
   }
@@ -475,6 +494,55 @@ window.API = (function () {
     });
   }
 
+  // ---------- Prieinamumas (kada gali dirbti / vesti veiklas) ----------
+
+  function needAvailability() {
+    if (mode === "supabase" && !caps.availability) {
+      throw new Error("Šiai funkcijai reikia duomenų bazės atnaujinimo. Administratorius: Supabase SQL Editor paleiskite atnaujinimas-4.sql.");
+    }
+  }
+  async function addAvailTemplate(obj) {
+    needAvailability();
+    if (mode === "supabase") return sbInsert("prieinamumas_sablonas", obj);
+    return demoMutate(function (d) {
+      obj.id = uid(); obj.created_at = new Date().toISOString();
+      d.prieinamumas_sablonas.push(obj);
+      return obj;
+    });
+  }
+  async function deleteAvailTemplate(id) {
+    if (mode === "supabase") return sbDelete("prieinamumas_sablonas", id);
+    return demoMutate(function (d) {
+      d.prieinamumas_sablonas = d.prieinamumas_sablonas.filter(function (x) { return x.id !== id; });
+    });
+  }
+  async function addAvailability(obj) {
+    needAvailability();
+    if (mode === "supabase") return sbInsert("prieinamumas", obj);
+    return demoMutate(function (d) {
+      obj.id = uid(); obj.created_at = new Date().toISOString();
+      d.prieinamumas.push(obj);
+      return obj;
+    });
+  }
+  async function deleteAvailability(id) {
+    if (mode === "supabase") return sbDelete("prieinamumas", id);
+    return demoMutate(function (d) {
+      d.prieinamumas = d.prieinamumas.filter(function (x) { return x.id !== id; });
+    });
+  }
+  // Pašalina visus konkrečios datos override įrašus (perrašant dieną iš naujo / grįžtant į šabloną).
+  async function clearAvailabilityForDate(empId, dateIso) {
+    if (mode === "supabase") {
+      var res = await sb.from("prieinamumas").delete().eq("darbuotojas_id", empId).eq("data", dateIso);
+      if (res.error) throw new Error("Nepavyko: " + res.error.message);
+      return;
+    }
+    return demoMutate(function (d) {
+      d.prieinamumas = d.prieinamumas.filter(function (x) { return !(x.darbuotojas_id === empId && x.data === dateIso); });
+    });
+  }
+
   // ---------- gyvas atsinaujinimas ----------
 
   function subscribe(onData, onStatus) {
@@ -516,6 +584,8 @@ window.API = (function () {
         .on("postgres_changes", { event: "*", schema: "public", table: "komentarai" }, debouncedRefetch)
         .on("postgres_changes", { event: "*", schema: "public", table: "pranesimai" }, debouncedRefetch)
         .on("postgres_changes", { event: "*", schema: "public", table: "atostogos" }, debouncedRefetch)
+        .on("postgres_changes", { event: "*", schema: "public", table: "prieinamumas_sablonas" }, debouncedRefetch)
+        .on("postgres_changes", { event: "*", schema: "public", table: "prieinamumas" }, debouncedRefetch)
         .subscribe(function (status) {
           if (stopped) return;
           if (status === "SUBSCRIBED") {
@@ -569,6 +639,11 @@ window.API = (function () {
     markNotificationsRead: markNotificationsRead,
     addVacation: addVacation,
     deleteVacation: deleteVacation,
+    addAvailTemplate: addAvailTemplate,
+    deleteAvailTemplate: deleteAvailTemplate,
+    addAvailability: addAvailability,
+    deleteAvailability: deleteAvailability,
+    clearAvailabilityForDate: clearAvailabilityForDate,
     subscribe: subscribe
   };
 })();
