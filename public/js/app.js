@@ -59,7 +59,7 @@
   var MONTHS_GEN = ["sausio", "vasario", "kovo", "balandžio", "gegužės", "birželio", "liepos", "rugpjūčio", "rugsėjo", "spalio", "lapkričio", "gruodžio"];
   var MONTHS_NOM = ["Sausis", "Vasaris", "Kovas", "Balandis", "Gegužė", "Birželis", "Liepa", "Rugpjūtis", "Rugsėjis", "Spalis", "Lapkritis", "Gruodis"];
   var VAC_LABEL = { atostogos: "Atostogos", liga: "Liga", kita: "Kita" };
-  var CATEGORIES = ["Edukacija", "Renginys", "Administracija", "Metodinė veikla", "Projektas", "Kita"];
+  var CATEGORIES = ["Edukacija", "Renginys", "Susirinkimas", "Administracija", "Metodinė veikla", "Projektas", "Kita"];
   var MONTHS_SHORT = ["saus.", "vas.", "kov.", "bal.", "geg.", "birž.", "liep.", "rugp.", "rugs.", "spal.", "lapkr.", "gruod."];
 
   var ICONS = {
@@ -923,8 +923,9 @@
     if (ov) ov.remove();
   }
 
-  function empSelectOptions(selectedId, includeNone) {
+  function empSelectOptions(selectedId, includeNone, includeAll) {
     var opts = includeNone ? '<option value="">— Nepriskirta (bendra veikla) —</option>' : "";
+    if (includeAll) opts += '<option value="__ALL__"' + (selectedId === "__ALL__" ? " selected" : "") + ">— Visi darbuotojai (kiekvienam po kopiją) —</option>";
     var list = isAdmin() ? activeEmployees() : (S.me ? [S.me] : []);
     opts += list.map(function (e) {
       return '<option value="' + e.id + '"' + (selectedId === e.id ? " selected" : "") + ">" + esc(e.vardas) + "</option>";
@@ -944,7 +945,7 @@
       "<h2>" + (isNew ? (opts.pool ? "Nauja bendra veikla" : "Naujas darbas") : "Darbo redagavimas") + "</h2>" +
       '<form id="task-form">' +
         '<div class="form-row"><label>Pavadinimas *</label><input type="text" name="pavadinimas" required maxlength="200" value="' + esc(t.pavadinimas) + '"></div>' +
-        '<div class="form-row"><label>Kam priskirta</label><select name="darbuotojas_id">' + empSelectOptions(t.darbuotojas_id, isAdmin()) + "</select></div>" +
+        '<div class="form-row"><label>Kam priskirta</label><select name="darbuotojas_id">' + empSelectOptions(t.darbuotojas_id, isAdmin(), isAdmin() && isNew) + "</select></div>" +
         '<div class="form-grid">' +
           '<div class="form-row"><label>Valandos</label><input type="number" name="valandos" min="0" step="0.5" value="' + esc(t.valandos) + '"></div>' +
           '<div class="form-row"><label>Terminas</label><input type="date" name="terminas" value="' + esc(t.terminas || "") + '"></div>' +
@@ -988,6 +989,25 @@
         if (isNew || task.statusas !== "atlikta") obj.atlikta_at = new Date().toISOString();
       } else {
         obj.atlikta_at = null;
+      }
+      // Priskyrimas visai komandai — po kopiją kiekvienam darbuotojui
+      if (isNew && obj.darbuotojas_id === "__ALL__") {
+        var emps = activeEmployees();
+        if (!emps.length) { closeModal(); return; }
+        var base = Object.assign({}, obj); delete base.darbuotojas_id;
+        try {
+          for (var i = 0; i < emps.length; i++) {
+            await API.addTask(Object.assign({}, base, { darbuotojas_id: emps[i].id }));
+            notifyUser(emps[i].id, "Jums priskirta veikla: „" + obj.pavadinimas + "“", "darbai");
+          }
+          toast("Priskirta visai komandai (" + emps.length + ")");
+          closeModal();
+          await refreshData();
+        } catch (e) {
+          toast(e.message || "Nepavyko");
+          await refreshData();
+        }
+        return;
       }
       var ok = isNew
         ? await mutate(API.addTask(obj), "Darbas išsaugotas")
@@ -1065,11 +1085,35 @@
         "</div>";
       }).join("") +
       '<div class="modal-actions">' +
+        '<button type="button" class="btn-ghost left" id="assign-all">Priskirti visiems</button>' +
         '<button type="button" class="btn-outline" data-action="close-modal">Atšaukti</button>' +
         '<button type="button" class="btn" id="assign-ok" disabled>Priskirti</button>' +
       "</div>"
     );
     var selected = null;
+    ov.querySelector("#assign-all").addEventListener("click", async function () {
+      var emps = activeEmployees();
+      if (!emps.length) return;
+      if (!confirm("Priskirti šią veiklą visiems (" + emps.length + ") komandos nariams? Kiekvienas gaus po atskirą kopiją.")) return;
+      try {
+        for (var i = 0; i < emps.length; i++) {
+          await API.addTask({
+            pavadinimas: task.pavadinimas, aprasymas: task.aprasymas || "",
+            darbuotojas_id: emps[i].id, valandos: Number(task.valandos) || 0,
+            terminas: task.terminas || null, prioritetas: task.prioritetas,
+            statusas: "laukia", kategorija: task.kategorija || ""
+          });
+          notifyUser(emps[i].id, "Jums priskirta veikla: „" + task.pavadinimas + "“", "darbai");
+        }
+        await API.deleteTask(task.id);
+        toast("Priskirta visai komandai (" + emps.length + ")");
+        closeModal();
+        await refreshData();
+      } catch (e) {
+        toast(e.message || "Nepavyko");
+        await refreshData();
+      }
+    });
     ov.querySelectorAll(".pick-row").forEach(function (row) {
       row.addEventListener("click", function () {
         ov.querySelectorAll(".pick-row").forEach(function (r) { r.classList.remove("selected"); });
