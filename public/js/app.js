@@ -28,7 +28,9 @@
     schedMode: "week",
     monthOffset: 0,
     teamQ: "",
-    viewChanged: true
+    viewChanged: true,
+    realMe: null,
+    viewAsId: null
   };
 
   var RING_COLORS = { "fill-low": "#AEAEB2", "fill-ok": "#34C759", "fill-warn": "#FF9F0A", "fill-high": "#FF453A" };
@@ -189,6 +191,8 @@
     return S.employees.filter(function (e) { return e.aktyvus; });
   }
   function isAdmin() { return !!(S.me && S.me.role === "admin"); }
+  // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
+  function isManager() { return !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
   // Ar dabartinis vartotojas kuruoja darbuotoją empId (gali valdyti jo darbus/grafiką)?
   function managesEmp(empId) {
     if (!S.me || !empId) return false;
@@ -216,6 +220,8 @@
     var pct = Math.round((hours / cap) * 100);
     return { hours: Math.round(hours * 10) / 10, cap: cap, pct: pct };
   }
+  // Valandos -> etato dalis (40 val. = 1 etatas).
+  function etatoStr(hours) { return Math.round((Number(hours) || 0) / 40 * 100) / 100; }
   function fillClass(pct) {
     if (pct >= 95) return "fill-high";
     if (pct >= 75) return "fill-warn";
@@ -326,12 +332,19 @@
   }
 
   function resolveMe() {
+    S.realMe = null;
     S.me = null;
     if (!S.session) return;
     if (S.mode === "demo") {
-      S.me = S.employees.find(function (e) { return e.id === S.session.demoEmployeeId; }) || null;
+      S.realMe = S.employees.find(function (e) { return e.id === S.session.demoEmployeeId; }) || null;
     } else {
-      S.me = S.employees.find(function (e) { return e.user_id === S.session.user.id; }) || null;
+      S.realMe = S.employees.find(function (e) { return e.user_id === S.session.user.id; }) || null;
+    }
+    S.me = S.realMe;
+    // Admino „žiūrėti kaip narys" peržiūra — visą sąsają matom to nario akimis.
+    if (S.realMe && S.realMe.role === "admin" && S.viewAsId) {
+      var as = S.employees.find(function (e) { return e.id === S.viewAsId; });
+      if (as) S.me = as; else S.viewAsId = null;
     }
   }
 
@@ -401,7 +414,7 @@
           "</div>" +
         "</div>" +
       "</header>" +
-      '<main class="main' + (S.viewChanged ? " view-enter" : "") + '">' + migrationBannerHtml() + content + "</main>" +
+      '<main class="main' + (S.viewChanged ? " view-enter" : "") + '">' + migrationBannerHtml() + viewAsBanner() + content + "</main>" +
       '<nav class="bottom-nav">' + bottomBtns + "</nav>";
   }
 
@@ -411,6 +424,14 @@
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9.5a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 19.5a2.2 2.2 0 0 0 4 0"/></svg>' +
       (n ? '<span class="bell-badge">' + (n > 9 ? "9+" : n) + "</span>" : "") +
       "</button>";
+  }
+
+  function viewAsBanner() {
+    if (!(S.realMe && S.realMe.role === "admin" && S.viewAsId && S.me && S.me.id !== S.realMe.id)) return "";
+    return '<div class="card" style="border-color:#7C3AED;background:rgba(124,58,237,.08);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div><b>👁 Žiūrite kaip:</b> ' + esc(S.me.vardas) + ' <span class="hint">— administratoriaus peržiūra</span></div>' +
+      '<button class="btn-outline btn-sm" data-action="view-as-exit">Grįžti į savo vaizdą</button>' +
+    "</div>";
   }
 
   function migrationBannerHtml() {
@@ -555,11 +576,13 @@
     var pool = poolTasks();
     var mine = S.me ? S.tasks.filter(function (t) { return t.darbuotojas_id === S.me.id && t.statusas !== "atlikta"; }) : [];
     var html = '<div class="view-title"><div><h1>' + esc(greetingText()) + '</h1><div class="view-sub">' + todayLongLabel() + "</div></div><div class=\"actions\">" +
-      '<button class="btn-outline desktop-only" data-action="tv-on">TV režimas</button>' +
+      (isManager() ? '<button class="btn-outline desktop-only" data-action="tv-on">TV režimas</button>' : "") +
       (isAdmin() ? '<button class="btn" data-action="new-task">+ Naujas darbas</button>' : "") +
       "</div></div>";
     html += metricsHtml();
-    html += '<div class="card"><h2>Komandos užkrova</h2><div class="hint" style="margin-bottom:14px">Aktyvių darbų valandos, palyginus su savaitės valandomis. Paspauskite žmogų — pamatysite jo darbus.</div>' + loadRingsHtml() + "</div>";
+    if (isManager()) {
+      html += '<div class="card"><h2>Komandos užkrova</h2><div class="hint" style="margin-bottom:14px">Aktyvių darbų valandos, palyginus su savaitės valandomis. Paspauskite žmogų — pamatysite jo darbus.</div>' + loadRingsHtml() + "</div>";
+    }
     html += '<div class="card"><h2>Bendros veiklos — dar nepriskirtos</h2>';
     if (pool.length) {
       html += pool.map(poolCardHtml).join("");
@@ -871,16 +894,18 @@
     var l = loadOf(e.id);
     var vac = vacationOf(e.id, todayIso());
     var canVac = canManageEmp(e.id);
+    var showLoad = isManager() || (S.me && e.id === S.me.id);
     return '<div class="team-card">' +
       '<div class="head">' + avatarHtml(e, true) +
-        '<div style="min-width:0"><div class="name">' + esc(e.vardas) + (e.role === "admin" ? ' <span class="chip chip-primary">Admin</span>' : "") +
+        '<div style="min-width:0"><div class="name">' + esc(e.vardas) + (e.role === "admin" ? ' <span class="chip chip-primary">Admin</span>' : (e.role === "vadovas" ? ' <span class="chip chip-amber">Vadovas</span>' : "")) +
         (vac ? ' <span class="chip chip-blue">' + VAC_LABEL[vac.tipas] + "</span>" : "") + "</div>" +
         '<div class="pareigos">' + esc(e.pareigos || "—") + "</div></div>" +
       "</div>" +
       '<div class="resp">' + (e.atsakomybes ? esc(e.atsakomybes) : '<span style="opacity:.6">Atsakomybės dar neaprašytos.</span>') + "</div>" +
-      '<div class="mini-track"><div class="mini-fill ' + fillClass(l.pct) + '" style="width:' + Math.min(100, l.pct) + '%"></div></div>' +
-      '<div class="foot"><span>' + l.hours + " val. iš " + l.cap + " (" + l.pct + "%)</span><span>" +
+      (showLoad ? '<div class="mini-track"><div class="mini-fill ' + fillClass(l.pct) + '" style="width:' + Math.min(100, l.pct) + '%"></div></div>' : "") +
+      '<div class="foot"><span>' + (showLoad ? l.hours + " val. iš " + l.cap + " (" + etatoStr(l.cap) + " et., " + l.pct + "%)" : esc(e.pareigos || "")) + "</span><span>" +
         (canVac ? '<button class="btn-ghost btn-sm" data-action="open-vacations" data-id="' + e.id + '">Atostogos</button>' : "") +
+        (isAdmin() && S.me && e.id !== S.me.id ? '<button class="btn-ghost btn-sm" data-action="view-as" data-id="' + e.id + '">Žiūrėti kaip</button>' : "") +
         (isAdmin() ? '<button class="btn-ghost btn-sm" data-action="open-emp" data-id="' + e.id + '">Redaguoti</button>' : "") +
       "</span></div>" +
       (!e.aktyvus ? '<div style="margin-top:8px"><span class="chip chip-gray">Neaktyvus</span></div>' : "") +
@@ -1294,9 +1319,10 @@
           '<div class="form-row"><label>Pareigos</label><input type="text" name="pareigos" maxlength="120" value="' + esc(e.pareigos || "") + '"></div>' +
           '<div class="form-row"><label>Rolė</label><select name="role">' +
             '<option value="darbuotojas"' + (e.role === "darbuotojas" ? " selected" : "") + ">Darbuotojas</option>" +
+            '<option value="vadovas"' + (e.role === "vadovas" ? " selected" : "") + ">Vadovas</option>" +
             '<option value="admin"' + (e.role === "admin" ? " selected" : "") + ">Administratorius</option>" +
           "</select></div>" +
-          '<div class="form-row"><label>Valandų per savaitę</label><input type="number" name="savaites_valandos" min="1" max="80" step="1" value="' + esc(e.savaites_valandos) + '"></div>' +
+          '<div class="form-row"><label>Etato dalis (1 = 40 val.)</label><input type="number" id="emp-etatas" name="etatas" min="0.1" max="2" step="0.05" value="' + esc(Math.round((Number(e.savaites_valandos) || 40) / 40 * 100) / 100) + '"><div class="hint" id="emp-etato-hint" style="margin-top:4px">= ' + (Number(e.savaites_valandos) || 40) + ' val. per savaitę</div></div>' +
           '<div class="form-row"><label>Spalva</label><input type="color" name="spalva" value="' + esc(e.spalva || "#5B5BD6") + '" style="height:40px;padding:4px"></div>' +
         "</div>" +
         '<div class="form-row"><label>Atsakomybės</label><textarea name="atsakomybes" placeholder="Už ką žmogus atsakingas — matys visa komanda">' + esc(e.atsakomybes || "") + "</textarea></div>" +
@@ -1316,7 +1342,7 @@
         email: String(fd.get("email") || "").trim().toLowerCase() || null,
         pareigos: String(fd.get("pareigos") || "").trim(),
         role: fd.get("role"),
-        savaites_valandos: Number(fd.get("savaites_valandos")) || 40,
+        savaites_valandos: (function () { var et = Number(fd.get("etatas")); return et > 0 ? Math.round(et * 40 * 100) / 100 : 40; })(),
         spalva: fd.get("spalva"),
         atsakomybes: String(fd.get("atsakomybes") || "").trim(),
         aktyvus: isNew ? true : fd.get("aktyvus") === "on"
@@ -1327,6 +1353,14 @@
         : await mutate(API.updateEmployee(emp.id, obj), "Pakeitimai išsaugoti");
       if (ok) closeModal();
     });
+    var etIn = ov.querySelector("#emp-etatas");
+    var etHint = ov.querySelector("#emp-etato-hint");
+    if (etIn && etHint) {
+      etIn.addEventListener("input", function () {
+        var v = Number(etIn.value);
+        etHint.textContent = "= " + (v > 0 ? Math.round(v * 40 * 100) / 100 : 0) + " val. per savaitę";
+      });
+    }
   }
 
   function vacationsModal(emp) {
@@ -1926,6 +1960,7 @@
         break;
       }
       case "goto-emp-tasks":
+        if (!isManager()) break;
         S.view = "darbai";
         S.filters.emp = id;
         S.filters.status = "aktyvus";
@@ -2034,6 +2069,7 @@
         break;
       }
       case "tv-on":
+        if (!isManager()) break;
         enterTV();
         break;
       case "tv-exit":
@@ -2061,6 +2097,19 @@
         if (em) empModal(em);
         break;
       }
+      case "view-as":
+        if (!(S.realMe && S.realMe.role === "admin")) break;
+        S.viewAsId = id;
+        S.view = "apzvalga";
+        render();
+        window.scrollTo(0, 0);
+        break;
+      case "view-as-exit":
+        S.viewAsId = null;
+        S.view = "apzvalga";
+        render();
+        window.scrollTo(0, 0);
+        break;
     }
   });
 

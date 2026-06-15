@@ -17,7 +17,7 @@ create table if not exists public.darbuotojai (
   pareigos text default '',
   atsakomybes text default '',
   savaites_valandos numeric not null default 40 check (savaites_valandos > 0),
-  role text not null default 'darbuotojas' check (role in ('admin', 'darbuotojas')),
+  role text not null default 'darbuotojas' check (role in ('admin', 'vadovas', 'darbuotojas')),
   spalva text default '#5B5BD6',
   aktyvus boolean not null default true,
   created_at timestamptz not null default now()
