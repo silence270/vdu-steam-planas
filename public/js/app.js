@@ -1092,6 +1092,45 @@
     });
   }
 
+  // ---------- Datų parinkiklis (Apple stilius, ISO 2026-06-01) ----------
+
+  function datePickerHtml(name, value) {
+    value = value || "";
+    return '<div class="dp">' +
+      '<button type="button" class="dp-field" data-action="dp-toggle">' +
+        '<span class="dp-val' + (value ? "" : " empty") + '">' + (value ? esc(value) : "Pasirinkti datą") + "</span>" +
+        '<svg class="dp-ic" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>' +
+      "</button>" +
+      '<input type="hidden" name="' + name + '" value="' + esc(value) + '">' +
+      '<div class="dp-cal" hidden></div>' +
+    "</div>";
+  }
+  function dpCalHtml(year, month, selected) {
+    var first = new Date(year, month, 1);
+    var startWd = (first.getDay() + 6) % 7;
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var todayI = todayIso();
+    var head = DAYS_SHORT.map(function (d) { return '<span class="dp-wd">' + d + "</span>"; }).join("");
+    var cells = "";
+    for (var b = 0; b < startWd; b++) cells += '<span class="dp-cell empty"></span>';
+    for (var dd = 1; dd <= daysInMonth; dd++) {
+      var iso = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(dd).padStart(2, "0");
+      var cls = "dp-cell";
+      if (iso === selected) cls += " sel";
+      if (iso === todayI) cls += " today";
+      cells += '<button type="button" class="' + cls + '" data-action="dp-day" data-val="' + iso + '">' + dd + "</button>";
+    }
+    return '<div class="dp-cal-inner" data-ym="' + year + "-" + String(month + 1).padStart(2, "0") + '">' +
+      '<div class="dp-cal-head"><button type="button" class="dp-nav" data-action="dp-prev">‹</button>' +
+      '<span class="dp-month">' + MONTHS_NOM[month] + " " + year + "</span>" +
+      '<button type="button" class="dp-nav" data-action="dp-next">›</button></div>' +
+      '<div class="dp-wds">' + head + "</div>" +
+      '<div class="dp-grid">' + cells + "</div>" +
+      '<div class="dp-foot"><button type="button" class="dp-today-btn" data-action="dp-today">Šiandien</button>' +
+      '<button type="button" class="dp-clear-btn" data-action="dp-clear">Išvalyti</button></div>' +
+    "</div>";
+  }
+
   // ---------- Modalai ----------
 
   function openModal(innerHtml) {
@@ -1146,7 +1185,7 @@
         '<div class="form-row"><label>Kam priskirta</label><select name="darbuotojas_id">' + empSelectOptions(t.darbuotojas_id, isAdmin(), isAdmin() && isNew) + "</select></div>" +
         '<div class="form-grid">' +
           '<div class="form-row"><label>Valandos</label><input type="number" name="valandos" min="0" step="0.5" value="' + esc(t.valandos) + '"></div>' +
-          '<div class="form-row"><label>Terminas</label><input type="date" name="terminas" value="' + esc(t.terminas || "") + '"></div>' +
+          '<div class="form-row"><label>Terminas</label>' + datePickerHtml("terminas", t.terminas || "") + "</div>" +
           '<div class="form-row"><label>Prioritetas</label><select name="prioritetas">' +
             Object.keys(PRIO).map(function (k) { return '<option value="' + k + '"' + (t.prioritetas === k ? " selected" : "") + ">" + PRIO[k] + "</option>"; }).join("") +
           "</select></div>" +
@@ -1411,7 +1450,7 @@
           (isAdmin() && !s.darbuotojas_id ? '<option value="">— Pasirinkite —</option>' : "") +
           empSelectOptions(s.darbuotojas_id, false) +
         "</select></div>" +
-        '<div class="form-row"><label>Data *</label><input type="date" name="data" required value="' + esc(s.data) + '"></div>' +
+        '<div class="form-row"><label>Data *</label>' + datePickerHtml("data", s.data || todayIso()) + "</div>" +
         '<div class="form-grid">' +
           '<div class="form-row"><label>Nuo</label><input type="time" name="nuo" required value="' + esc(s.nuo) + '"></div>' +
           '<div class="form-row"><label>Iki</label><input type="time" name="iki" required value="' + esc(s.iki) + '"></div>' +
@@ -1533,8 +1572,8 @@
       (canEdit ?
         '<form id="vac-form" style="margin-top:14px">' +
           '<div class="form-grid">' +
-            '<div class="form-row"><label>Nuo</label><input type="date" name="nuo" required value="' + todayIso() + '"></div>' +
-            '<div class="form-row"><label>Iki</label><input type="date" name="iki" required value="' + todayIso() + '"></div>' +
+            '<div class="form-row"><label>Nuo</label>' + datePickerHtml("nuo", todayIso()) + "</div>" +
+            '<div class="form-row"><label>Iki</label>' + datePickerHtml("iki", todayIso()) + "</div>" +
             '<div class="form-row"><label>Tipas</label><select name="tipas"><option value="atostogos">Atostogos</option><option value="liga">Liga</option><option value="kita">Kita</option></select></div>' +
             '<div class="form-row"><label>Pastaba</label><input type="text" name="pastaba" maxlength="120"></div>' +
           "</div>" +
@@ -2355,6 +2394,53 @@
           try { await API.clearAvailabilityForDate(rEmp, rDate); toast("Grąžinta į šabloną"); await refreshData(); }
           catch (e) { toast(e.message || "Nepavyko"); }
         })();
+        break;
+      }
+      case "dp-toggle": {
+        var dpT = el.closest(".dp");
+        var calT = dpT.querySelector(".dp-cal");
+        var wasOpen = !calT.hasAttribute("hidden");
+        document.querySelectorAll(".dp-cal").forEach(function (c) { if (c !== calT) { c.setAttribute("hidden", ""); c.innerHTML = ""; } });
+        if (wasOpen) { calT.setAttribute("hidden", ""); calT.innerHTML = ""; }
+        else {
+          var vT = dpT.querySelector("input[type=hidden]").value;
+          var baseT = vT ? dateFromIso(vT) : new Date();
+          calT.innerHTML = dpCalHtml(baseT.getFullYear(), baseT.getMonth(), vT);
+          calT.removeAttribute("hidden");
+        }
+        break;
+      }
+      case "dp-day": {
+        var dpD = el.closest(".dp");
+        var vD = el.getAttribute("data-val");
+        dpD.querySelector("input[type=hidden]").value = vD;
+        var vsD = dpD.querySelector(".dp-val"); vsD.textContent = vD; vsD.classList.remove("empty");
+        var calD = dpD.querySelector(".dp-cal"); calD.setAttribute("hidden", ""); calD.innerHTML = "";
+        break;
+      }
+      case "dp-prev":
+      case "dp-next": {
+        var innerN = el.closest(".dp-cal-inner");
+        var ymN = innerN.getAttribute("data-ym").split("-");
+        var yN = Number(ymN[0]), mN = Number(ymN[1]) - 1 + (action === "dp-next" ? 1 : -1);
+        if (mN < 0) { mN = 11; yN--; } else if (mN > 11) { mN = 0; yN++; }
+        var dpN = el.closest(".dp");
+        dpN.querySelector(".dp-cal").innerHTML = dpCalHtml(yN, mN, dpN.querySelector("input[type=hidden]").value);
+        break;
+      }
+      case "dp-today": {
+        var dpY = el.closest(".dp");
+        var tiY = todayIso();
+        dpY.querySelector("input[type=hidden]").value = tiY;
+        var vsY = dpY.querySelector(".dp-val"); vsY.textContent = tiY; vsY.classList.remove("empty");
+        var calY = dpY.querySelector(".dp-cal"); calY.setAttribute("hidden", ""); calY.innerHTML = "";
+        break;
+      }
+      case "dp-clear": {
+        var dpC = el.closest(".dp");
+        dpC.querySelector("input[type=hidden]").value = "";
+        var vsC = dpC.querySelector(".dp-val"); vsC.textContent = "Pasirinkti datą"; vsC.classList.add("empty");
+        var calC = dpC.querySelector(".dp-cal"); calC.setAttribute("hidden", ""); calC.innerHTML = "";
         break;
       }
     }

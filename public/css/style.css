@@ -637,3 +637,30 @@ input[type="range"]::-webkit-slider-thumb {
   .avail-day { min-height: auto; }
   .avail-seg { margin-left: 0; width: 100%; }
 }
+
+/* Datų parinkiklis (Apple stilius) */
+.dp { position: relative; }
+.dp-field { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 15px; cursor: pointer; font-variant-numeric: tabular-nums; transition: border-color .15s; }
+.dp-field:hover { border-color: var(--primary); }
+.dp-val { font-weight: 500; }
+.dp-val.empty { color: var(--muted); font-weight: 400; }
+.dp-ic { color: var(--muted); flex: 0 0 auto; }
+.dp-cal { margin-top: 6px; }
+.dp-cal-inner { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 16px; padding: 12px; box-shadow: var(--shadow); }
+.dp-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.dp-month { font-weight: 700; font-size: 15px; }
+.dp-nav { border: none; background: var(--fill); color: var(--text); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 18px; line-height: 1; }
+.dp-nav:hover { background: var(--fill-hover); }
+.dp-wds { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+.dp-wd { text-align: center; font-size: 11px; color: var(--muted); font-weight: 600; padding: 2px 0; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-cell { aspect-ratio: 1; border: none; background: transparent; color: var(--text); border-radius: 50%; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+.dp-cell:hover:not(.empty) { background: var(--fill); }
+.dp-cell.empty { cursor: default; }
+.dp-cell.today { color: var(--primary); font-weight: 700; }
+.dp-cell.sel { background: var(--primary); color: #fff; font-weight: 700; }
+.dp-cell.sel.today { color: #fff; }
+.dp-foot { display: flex; justify-content: space-between; margin-top: 8px; }
+.dp-today-btn, .dp-clear-btn { border: none; background: transparent; color: var(--primary); cursor: pointer; font-size: 13px; font-weight: 600; padding: 4px 6px; border-radius: 8px; }
+.dp-today-btn:hover, .dp-clear-btn:hover { background: var(--fill); }
+.dp-clear-btn { color: var(--muted); }
