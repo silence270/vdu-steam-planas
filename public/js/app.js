@@ -42,10 +42,22 @@
     return v;
   }
 
+  // Vardas šauksmininku (kreipiniui): Gabrielius->Gabrieliau, Tomas->Tomai, Gabrielė->Gabriele, Marius->Mariau.
+  function vocative(name) {
+    var n = String(name || "");
+    if (!n) return n;
+    if (n.slice(-3) === "ius") return n.slice(0, -3) + "iau";
+    if (n.slice(-2) === "us")  return n.slice(0, -2) + "au";
+    if (n.slice(-2) === "as")  return n.slice(0, -2) + "ai";
+    if (n.slice(-2) === "ys")  return n.slice(0, -2) + "y";
+    if (n.slice(-2) === "is")  return n.slice(0, -2) + "i";
+    if (n.slice(-1) === "ė")   return n.slice(0, -1) + "e";
+    return n; // -a, -ija, balsiai/priebalsiai — paliekam kaip yra
+  }
   function greetingText() {
     var h = new Date().getHours();
     var g = h < 6 ? "Labos nakties" : h < 12 ? "Labas rytas" : h < 18 ? "Laba diena" : "Labas vakaras";
-    var name = S.me ? String(S.me.vardas).split(/\s+/)[0] : "";
+    var name = S.me ? vocative(String(S.me.vardas).split(/\s+/)[0]) : "";
     return name ? g + ", " + name : g;
   }
   function todayLongLabel() {
