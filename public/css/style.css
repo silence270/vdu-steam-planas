@@ -578,3 +578,37 @@ input[type="range"]::-webkit-slider-thumb {
 /* TV režime žiedai didesni */
 .tv-body .ring-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
 .tv-body .ring-name { font-size: 17px; }
+
+/* TV dashboard — viskas vienu metu */
+.tv-dash { max-width: 1640px; margin: 0 auto; }
+.tv-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 18px; }
+.tv-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 20px; text-align: center; box-shadow: var(--shadow-sm); }
+.tv-stat.alert { border-color: var(--red); }
+.tv-stat-n { font-size: 50px; font-weight: 800; line-height: 1; }
+.tv-stat.alert .tv-stat-n { color: var(--red); }
+.tv-stat-l { color: var(--muted); margin-top: 6px; font-size: 15px; }
+.tv-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; align-items: start; }
+.tv-span2 { grid-column: 1 / -1; }
+.tv-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 20px; box-shadow: var(--shadow-sm); }
+.tv-card .tv-title { font-size: 19px; margin: 0 0 12px; }
+.tv-col { display: flex; flex-direction: column; gap: 16px; }
+.tv-card .ring-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.tv-card .ring-name { font-size: 15px; }
+.tv-card .ring-sub { font-size: 13px; }
+.tv-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
+.tv-day { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 8px 7px; min-height: 96px; }
+.tv-day.today { border-color: var(--primary); }
+.tv-day-h { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.tv-day-h span { color: var(--text); }
+.tv-shift { display: flex; justify-content: space-between; gap: 4px; font-size: 12px; padding: 1px 0; }
+.tv-shift-t { color: var(--muted); white-space: nowrap; }
+.tv-day-empty { text-align: center; color: var(--muted); opacity: .4; }
+.tv-line { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
+.tv-line:last-child { border-bottom: none; }
+.tv-line-d { font-weight: 700; min-width: 58px; }
+.tv-line-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-line-w { color: var(--muted); white-space: nowrap; }
+@media (max-width: 1000px) {
+  .tv-stats { grid-template-columns: repeat(2, 1fr); }
+  .tv-grid { grid-template-columns: 1fr; }
+}

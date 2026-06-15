@@ -1646,11 +1646,10 @@
 
   function enterTV() {
     S.tv = true;
-    S.tvPanel = 0;
     if (S.tvTimer) clearInterval(S.tvTimer);
+    // Viskas rodoma vienu metu (be rotacijos) — kas 30 s atnaujinam laikrodį ir duomenis.
     S.tvTimer = setInterval(function () {
       if (!S.tv) return;
-      S.tvPanel = 1 - S.tvPanel;
       render();
     }, 30000);
     render();
@@ -1664,33 +1663,91 @@
     render();
   }
 
+  function tvStatsHtml() {
+    var today = todayIso();
+    var active = S.tasks.filter(function (t) { return t.statusas !== "atlikta"; });
+    var pool = poolTasks();
+    var late = active.filter(function (t) { return t.terminas && t.terminas < today; });
+    var working = {};
+    S.shifts.forEach(function (s) { if (s.data === today) working[s.darbuotojas_id] = true; });
+    function tile(n, label, alert) {
+      return '<div class="tv-stat' + (alert ? " alert" : "") + '"><div class="tv-stat-n">' + n + '</div><div class="tv-stat-l">' + label + "</div></div>";
+    }
+    return '<div class="tv-stats">' +
+      tile(active.length, "Aktyvūs darbai") +
+      tile(Object.keys(working).length, "Šiandien dirba") +
+      tile(pool.length, "Nepriskirtos veiklos") +
+      tile(late.length, "Vėluojantys darbai", late.length > 0) +
+    "</div>";
+  }
+
+  function tvWeekHtml() {
+    var mon = startOfWeek(0);
+    var todayI = todayIso();
+    var out = "";
+    for (var i = 0; i < 7; i++) {
+      var iso = isoFromDate(addDays(mon, i));
+      var dnum = addDays(mon, i).getDate();
+      var shifts = S.shifts.filter(function (s) { return s.data === iso; })
+        .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
+      out += '<div class="tv-day' + (iso === todayI ? " today" : "") + '">' +
+        '<div class="tv-day-h">' + DAYS_SHORT[i] + " <span>" + dnum + "</span></div>" +
+        (shifts.length ? shifts.map(function (s) {
+          var e = getEmp(s.darbuotojas_id);
+          return '<div class="tv-shift"><span class="tv-shift-n">' + esc(shortName(e ? e.vardas : "?")) +
+            '</span><span class="tv-shift-t">' + esc(String(s.nuo).slice(0, 5)) + "–" + esc(String(s.iki).slice(0, 5)) + "</span></div>";
+        }).join("") : '<div class="tv-day-empty">—</div>') +
+      "</div>";
+    }
+    return '<div class="tv-week">' + out + "</div>";
+  }
+
+  function tvDeadlinesHtml() {
+    var today = todayIso();
+    var up = S.tasks.filter(function (t) { return t.statusas !== "atlikta" && t.terminas && t.terminas >= today; })
+      .sort(function (a, b) { return a.terminas < b.terminas ? -1 : 1; }).slice(0, 6);
+    if (!up.length) return '<div class="empty">Artimiausių terminų nėra.</div>';
+    return up.map(function (t) {
+      var e = getEmp(t.darbuotojas_id);
+      return '<div class="tv-line"><span class="tv-line-d">' + esc(fmtShort(t.terminas)) + "</span>" +
+        '<span class="tv-line-t">' + esc(t.pavadinimas) + "</span>" +
+        '<span class="tv-line-w">' + esc(e ? shortName(e.vardas) : "—") + "</span></div>";
+    }).join("");
+  }
+
+  function tvOutHtml() {
+    var today = todayIso();
+    var out = S.vacations.filter(function (v) { return v.nuo <= today && today <= v.iki; });
+    if (!out.length) return '<div class="empty">Šiandien visi darbe.</div>';
+    return out.map(function (v) {
+      var e = getEmp(v.darbuotojas_id);
+      return '<div class="tv-line"><span class="tv-line-t">' + esc(e ? e.vardas : "?") + "</span>" +
+        '<span class="chip chip-blue">' + VAC_LABEL[v.tipas] + "</span>" +
+        '<span class="tv-line-w">iki ' + esc(fmtShort(v.iki)) + "</span></div>";
+    }).join("");
+  }
+
   function renderTV() {
     var now = new Date();
     var hh = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
     var gen = MONTHS_GEN[now.getMonth()];
     var dateLabel = gen.charAt(0).toUpperCase() + gen.slice(1) + " " + now.getDate() + " d., " + DAYS_LONG[(now.getDay() + 6) % 7].toLowerCase();
-    var body;
-    if (S.tvPanel === 0) {
-      body = '<h2 class="tv-title">Komandos užkrova</h2>' + loadRingsHtml();
-    } else {
-      var today = todayIso();
-      var todays = S.shifts.filter(function (s) { return s.data === today; })
-        .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
-      var pool = poolTasks();
-      body = '<h2 class="tv-title">Šiandien dirba (' + todays.length + ")</h2>" +
-        (todays.length ? todays.map(function (s) {
-          var e = getEmp(s.darbuotojas_id);
-          return '<div class="task-row">' + avatarHtml(e) +
-            '<div class="t-main"><div class="t-title">' + esc(e ? e.vardas : "?") + '</div><div class="t-meta"><span>' +
-            esc(s.nuo) + "–" + esc(s.iki) + "</span>" + (s.pastaba ? "<span>" + esc(s.pastaba) + "</span>" : "") + "</div></div></div>";
-        }).join("") : '<div class="empty">Šiandien tvarkaraščio įrašų nėra.</div>') +
-        (pool.length ? '<div class="section-label">Nepriskirtos veiklos: ' + pool.length + "</div>" : "");
-    }
+    var mon = startOfWeek(0);
     return '<div class="tv-mode">' +
       '<div class="tv-head"><div><b>VDU STEAM didaktikos centras</b><small>' + dateLabel + "</small></div>" +
       '<div class="tv-clock">' + hh + "</div>" +
       '<button class="btn-ghost" data-action="tv-exit" style="font-size:22px" title="Uždaryti">×</button></div>' +
-      '<div class="tv-body">' + body + "</div>" +
+      '<div class="tv-dash">' +
+        tvStatsHtml() +
+        '<div class="tv-grid">' +
+          '<section class="tv-card tv-span2"><h2 class="tv-title">Komandos užkrova</h2>' + loadRingsHtml() + "</section>" +
+          '<section class="tv-card"><h2 class="tv-title">Ši savaitė · ' + esc(weekRangeLabel(mon)) + '</h2>' + tvWeekHtml() + "</section>" +
+          '<div class="tv-col">' +
+            '<section class="tv-card"><h2 class="tv-title">Artimiausi terminai</h2>' + tvDeadlinesHtml() + "</section>" +
+            '<section class="tv-card"><h2 class="tv-title">Atostogos / nedarbingumas</h2>' + tvOutHtml() + "</section>" +
+          "</div>" +
+        "</div>" +
+      "</div>" +
     "</div>";
   }
 
