@@ -1940,11 +1940,12 @@
     return '<div class="tv-mode">' +
       '<div class="tv-head"><div><b>VDU STEAM didaktikos centras</b><small>' + dateLabel + "</small></div>" +
       '<div class="tv-clock">' + hh + "</div>" +
+      '<button class="btn-ghost" data-action="tv-fullscreen" style="font-size:20px" title="Visas ekranas">⛶</button>' +
       '<button class="btn-ghost" data-action="tv-exit" style="font-size:22px" title="Uždaryti">×</button></div>' +
       '<div class="tv-dash">' +
         tvStatsHtml() +
         '<div class="tv-grid">' +
-          '<section class="tv-card tv-span2"><h2 class="tv-title">Komandos užkrova</h2>' + loadRingsHtml() + "</section>" +
+          '<section class="tv-card tv-load tv-span2"><h2 class="tv-title">Komandos užkrova</h2>' + loadRingsHtml() + "</section>" +
           '<section class="tv-card"><h2 class="tv-title">Ši savaitė · ' + esc(weekRangeLabel(mon)) + '</h2>' + tvWeekHtml() + "</section>" +
           '<div class="tv-col">' +
             '<section class="tv-card"><h2 class="tv-title">Artimiausi terminai</h2>' + tvDeadlinesHtml() + "</section>" +
@@ -2349,6 +2350,17 @@
       case "tv-exit":
         exitTV();
         break;
+      case "tv-fullscreen": {
+        var de = document.documentElement;
+        try {
+          if (document.fullscreenElement || document.webkitFullscreenElement) {
+            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+          } else {
+            (de.requestFullscreen || de.webkitRequestFullscreen).call(de);
+          }
+        } catch (e) {}
+        break;
+      }
       case "forgot-pass":
         forgotModal();
         break;
