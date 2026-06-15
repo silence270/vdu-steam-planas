@@ -746,6 +746,10 @@
     return S.shifts.filter(function (s) { return s.darbuotojas_id === empId && s.data === dayIso; })
       .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
   }
+  // Darbai (užduotys), kurių terminas yra tą dieną — kalendoriuje kaip visos dienos žymos.
+  function tasksDueOn(empId, dayIso) {
+    return S.tasks.filter(function (t) { return t.darbuotojas_id === empId && t.terminas === dayIso && t.statusas !== "atlikta"; });
+  }
 
   function viewTvarkarastis() {
     var mon = startOfWeek(S.weekOffset);
@@ -798,8 +802,11 @@
             (s.pastaba ? "<small>" + esc(s.pastaba) + "</small>" : "") +
           "</span>";
         }).join("");
+        var tItems = tasksDueOn(e.id, dIso).map(function (t) {
+          return '<span class="task-pill prio-' + esc(t.prioritetas) + '" data-action="open-task" data-id="' + t.id + '" title="Darbo terminas">⚑ ' + esc(t.pavadinimas) + "</span>";
+        }).join("");
         var add = (canRow && !vac) ? '<button class="cell-add" data-action="new-shift" data-emp="' + e.id + '" data-date="' + dIso + '" title="Pridėti">+</button>' : "";
-        return "<td class='" + (dIso === today ? "today" : "") + "'>" + vacHtml + items + add + "</td>";
+        return "<td class='" + (dIso === today ? "today" : "") + "'>" + vacHtml + items + tItems + add + "</td>";
       }).join("");
       return "<tr><td class='emp-cell'>" + esc(e.vardas) + '<span class="role">' + esc(e.pareigos || "") + "</span></td>" + cells + "</tr>";
     }).join("");
@@ -833,8 +840,16 @@
       ? '<div class="hint" style="margin-bottom:8px">Nedirba: ' + vacToday.map(function (e) { return esc(e.vardas); }).join(", ") + "</div>"
       : "";
 
+    var dayTasksM = S.tasks.filter(function (t) { return t.terminas === selIso && t.statusas !== "atlikta"; });
+    var taskListM = dayTasksM.length ? '<div class="section-label">Darbų terminai</div>' + dayTasksM.map(function (t) {
+      var te = getEmp(t.darbuotojas_id);
+      return '<div class="task-row" data-action="open-task" data-id="' + t.id + '">' +
+        '<div class="t-main"><div class="t-title">⚑ ' + esc(t.pavadinimas) + "</div>" +
+        '<div class="t-meta">' + (te ? "<span>" + esc(te.vardas) + "</span>" : "<span>Bendra</span>") + '<span class="chip ' + PRIO_CHIP[t.prioritetas] + '">' + PRIO[t.prioritetas] + "</span>" + katBadge(t) + "</div></div></div>";
+    }).join("") : "";
+
     html += '<div class="mobile-only"><div class="day-chips">' + chips + "</div>" +
-      '<div class="card"><h2>' + DAYS_LONG[S.selDay] + ", " + MONTHS_GEN[days[S.selDay].getMonth()] + " " + days[S.selDay].getDate() + " d.</h2>" + vacLine + dayList +
+      '<div class="card"><h2>' + DAYS_LONG[S.selDay] + ", " + MONTHS_GEN[days[S.selDay].getMonth()] + " " + days[S.selDay].getDate() + " d.</h2>" + vacLine + dayList + taskListM +
       '<button class="btn-outline btn-sm" data-action="new-shift" data-date="' + selIso + '" style="margin-top:8px">+ Pridėti įrašą</button>' +
       "</div></div>";
 
@@ -870,9 +885,11 @@
           return '<span class="m-dot" title="' + esc(e ? e.vardas : "") + '" style="background:' + esc(e ? e.spalva : "#999") + '"></span>';
         }).join("") + (dayShifts.length > 8 ? "<small>+" + (dayShifts.length - 8) + "</small>" : "");
         var vacN = emps.filter(function (e) { return vacationOf(e.id, dIso); }).length;
+        var dayTasksN = S.tasks.filter(function (t) { return t.terminas === dIso && t.statusas !== "atlikta"; }).length;
         cells += '<td class="m-cell' + (inMonth ? "" : " m-out") + (dIso === today ? " today" : "") + '" data-action="month-day" data-date="' + dIso + '">' +
           '<div class="m-num">' + d.getDate() + "</div>" +
           '<div class="m-dots">' + dots + "</div>" +
+          (dayTasksN ? '<div class="m-tasks">⚑ ' + dayTasksN + " term.</div>" : "") +
           (vacN ? '<div class="m-vac">' + vacN + " nedirba</div>" : "") +
         "</td>";
         d.setDate(d.getDate() + 1);
@@ -881,7 +898,7 @@
       if (isoFromDate(d) > lastIso) break;
     }
     var head = DAYS_SHORT.map(function (x) { return "<th>" + x + "</th>"; }).join("");
-    return '<div class="card" style="overflow-x:auto"><div class="hint" style="margin-bottom:8px">Taškai — tvarkaraščio įrašai (spalva pagal žmogų). Paspauskite dieną — atsidarys jos savaitė.</div>' +
+    return '<div class="card" style="overflow-x:auto"><div class="hint" style="margin-bottom:8px">Taškai — tvarkaraščio įrašai (spalva pagal žmogų); ⚑ — darbų terminai. Paspauskite dieną — atsidarys jos savaitė.</div>' +
       '<table class="sched-table month-table"><tr>' + head + "</tr>" + rows + "</table></div>";
   }
 
@@ -1872,13 +1889,18 @@
       var dnum = addDays(mon, i).getDate();
       var shifts = S.shifts.filter(function (s) { return s.data === iso; })
         .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
+      var shiftHtml = shifts.map(function (s) {
+        var e = getEmp(s.darbuotojas_id);
+        return '<div class="tv-shift"><span class="tv-shift-n">' + esc(shortName(e ? e.vardas : "?")) +
+          '</span><span class="tv-shift-t">' + esc(String(s.nuo).slice(0, 5)) + "–" + esc(String(s.iki).slice(0, 5)) + "</span></div>";
+      }).join("");
+      var dtasks = S.tasks.filter(function (t) { return t.terminas === iso && t.statusas !== "atlikta"; });
+      var taskHtml = dtasks.slice(0, 4).map(function (t) {
+        return '<div class="tv-shift tv-task"><span class="tv-shift-n">⚑ ' + esc(t.pavadinimas) + "</span></div>";
+      }).join("");
       out += '<div class="tv-day' + (iso === todayI ? " today" : "") + '">' +
         '<div class="tv-day-h">' + DAYS_SHORT[i] + " <span>" + dnum + "</span></div>" +
-        (shifts.length ? shifts.map(function (s) {
-          var e = getEmp(s.darbuotojas_id);
-          return '<div class="tv-shift"><span class="tv-shift-n">' + esc(shortName(e ? e.vardas : "?")) +
-            '</span><span class="tv-shift-t">' + esc(String(s.nuo).slice(0, 5)) + "–" + esc(String(s.iki).slice(0, 5)) + "</span></div>";
-        }).join("") : '<div class="tv-day-empty">—</div>') +
+        (shiftHtml || taskHtml ? shiftHtml + taskHtml : '<div class="tv-day-empty">—</div>') +
       "</div>";
     }
     return '<div class="tv-week">' + out + "</div>";
