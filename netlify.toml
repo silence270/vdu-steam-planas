@@ -1,0 +1,10 @@
+# Netlify nustatymai
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# Graži nuoroda kalendoriaus prenumeratai (užklausos parametrai perduodami)
+[[redirects]]
+  from = "/kalendorius.ics"
+  to = "/.netlify/functions/calendar"
+  status = 200
