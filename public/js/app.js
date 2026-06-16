@@ -332,9 +332,9 @@
     API.addNotifications(list).catch(function () {});
   }
   // Pranešimas visai aktyviai komandai (išskyrus save).
-  function notifyEveryone(tekstas, vaizdas) {
+  function notifyEveryone(tekstas, vaizdas, exceptId) {
     var list = activeEmployees()
-      .filter(function (e) { return !S.me || e.id !== S.me.id; })
+      .filter(function (e) { return (!S.me || e.id !== S.me.id) && e.id !== exceptId; })
       .map(function (e) { return { darbuotojas_id: e.id, tekstas: tekstas, vaizdas: vaizdas || "darbai" }; });
     if (list.length) API.addNotifications(list).catch(function () {});
   }
@@ -465,7 +465,7 @@
   function migrationBannerHtml() {
     if (!S.migrationNeeded || !isAdmin()) return "";
     return '<div class="card" style="border-color:#F2A33C;margin-bottom:14px"><b>Reikia duomenų bazės atnaujinimo.</b>' +
-      '<div class="hint">Naujoms funkcijoms (komentarai, pranešimai, atostogos) Supabase SQL Editor lange paleiskite failą <b>supabase/atnaujinimas-1.sql</b>. Iki tol sistema veikia kaip anksčiau.</div></div>';
+      '<div class="hint">Naujoms funkcijoms Supabase SQL Editor lange paleiskite naujausius failus iš aplanko <b>supabase/</b> (<b>atnaujinimas-1.sql</b> … <b>atnaujinimas-4.sql</b>) eilės tvarka. Iki tol kai kurios funkcijos (rolės, kuratoriai, prieinamumas) veikia ribotai.</div></div>';
   }
 
   function notifsModal() {
@@ -712,7 +712,7 @@
     var html = '<div class="view-title"><h1>Darbai</h1><div class="actions">' +
       (isAdmin() ? '<button class="btn-outline" data-action="import">Importuoti</button>' : "") +
       (isAdmin() ? '<button class="btn-outline" data-action="report">Ataskaita</button>' : "") +
-      '<button class="btn-outline" data-action="export">Eksportuoti į Excel</button>' +
+      (isManager() ? '<button class="btn-outline" data-action="export">Eksportuoti į Excel</button>' : "") +
       '<button class="btn" data-action="new-task">+ Naujas darbas</button>' +
     "</div></div>";
 
@@ -1020,6 +1020,9 @@
 
   function viewPrieinamumas() {
     if (!S.me) return "";
+    if (API.getCaps && !API.getCaps().availability) {
+      return '<div class="view-title"><div><h1>Prieinamumas</h1></div></div><div class="card"><div class="hint">Ši funkcija reikalauja duomenų bazės atnaujinimo. Administratorius: Supabase SQL Editor paleiskite <b>supabase/atnaujinimas-4.sql</b>.</div></div>';
+    }
     var editable = availEditableEmps();
     var empId = (S.availEmpId && editable.some(function (e) { return e.id === S.availEmpId; })) ? S.availEmpId : S.me.id;
     var canEdit = canManageEmp(empId);
@@ -1130,9 +1133,12 @@
         if (opts.wd) {
           await API.addAvailTemplate({ darbuotojas_id: empId, savaite_diena: opts.wd, nuo: nuo, iki: iki });
         } else {
-          var hasOv = S.availability.some(function (a) { return a.darbuotojas_id === empId && a.data === opts.date; });
-          if (!hasOv) {
-            var tmpl = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === weekdayOfIso(opts.date); });
+          var existing = S.availability.filter(function (a) { return a.darbuotojas_id === empId && a.data === opts.date; });
+          if (existing.some(function (a) { return a.nedirba; })) {
+            // Diena buvo „negaliu" — pašalinam tą žymą, kad pridėtas laikas matytųsi.
+            await API.clearAvailabilityForDate(empId, opts.date);
+          } else if (!existing.length) {
+            var tmpl = S.availTemplate.filter(function (t) { return t.darbuotojas_id === empId && t.savaite_diena === weekdayOfIso(opts.date) && t.nuo && !t.nedirba; });
             for (var k = 0; k < tmpl.length; k++) {
               await API.addAvailability({ darbuotojas_id: empId, data: opts.date, nuo: tmpl[k].nuo, iki: tmpl[k].iki, nedirba: false });
             }
@@ -1312,7 +1318,7 @@
         if (obj.darbuotojas_id && obj.darbuotojas_id !== prevAssignee) {
           notifyUser(obj.darbuotojas_id, "Jums priskirtas darbas: „" + obj.pavadinimas + "“", "darbai");
         }
-        if (notifyAll) notifyEveryone("Nauja veikla: „" + obj.pavadinimas + "“" + (obj.terminas ? " (iki " + obj.terminas + ")" : ""), "darbai");
+        if (notifyAll) notifyEveryone("Nauja veikla: „" + obj.pavadinimas + "“" + (obj.terminas ? " (iki " + obj.terminas + ")" : ""), "darbai", obj.darbuotojas_id);
         closeModal();
       }
     });
@@ -1886,6 +1892,10 @@
   // ---------- TV režimas ----------
 
   function enterTV() {
+    if (!isManager()) {
+      if (location.hash === "#tv") { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
+      return;
+    }
     S.tv = true;
     if (S.tvTimer) clearInterval(S.tvTimer);
     // Viskas rodoma vienu metu (be rotacijos) — kas 30 s atnaujinam laikrodį ir duomenis.
@@ -2042,7 +2052,7 @@
         "Vardas": e.vardas,
         "Pareigos": e.pareigos || "",
         "El. paštas": e.email || "",
-        "Rolė": e.role === "admin" ? "Administratorius" : "Darbuotojas",
+        "Rolė": e.role === "admin" ? "Administratorius" : e.role === "vadovas" ? "Vadovas" : "Darbuotojas",
         "Val. per savaitę": Number(e.savaites_valandos) || 40,
         "Užkrova (val.)": l.hours,
         "Užkrova (%)": l.pct,
@@ -2245,6 +2255,7 @@
         }
         break;
       case "export":
+        if (!isManager()) break;
         exportExcel();
         break;
       case "new-task":

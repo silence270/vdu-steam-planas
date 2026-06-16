@@ -309,7 +309,7 @@ window.API = (function () {
         vacations: extras[2].data || [],
         availTemplate: trimT(avail[0].data),
         availability: trimT(avail[1].data),
-        migrationNeeded: migrationNeeded || !caps.taskExtras
+        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability
       };
     }
     caps.taskExtras = true;
@@ -656,6 +656,7 @@ window.API = (function () {
     deleteAvailability: deleteAvailability,
     clearAvailabilityForDate: clearAvailabilityForDate,
     clearAvailTemplateForWeekday: clearAvailTemplateForWeekday,
+    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability }; },
     subscribe: subscribe
   };
 })();
