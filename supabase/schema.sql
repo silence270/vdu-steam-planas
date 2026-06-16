@@ -1,8 +1,11 @@
 -- ============================================================
--- VDU STEAM didaktikos centras — komandos planas
--- Visas duomenų bazės paruošimas vienu paleidimu.
--- Kaip naudoti: Supabase → SQL Editor → New query → įklijuoti
--- visą šį failą → Run. Saugu leisti kelis kartus.
+-- VDU STEAM didaktikos centras — komandos planas (BAZINĖ schema)
+-- Kaip naudoti: Supabase → SQL Editor → New query → įklijuoti → Run.
+-- Saugu leisti kelis kartus.
+-- SVARBU: ŠITO VIENO NEUŽTENKA atnaujinimui. Po šio failo paleiskite
+-- IR atnaujinimus eilės tvarka: atnaujinimas-1.sql, -2.sql, -3.sql, -4.sql.
+-- (Esamai DB perpaleidus vien schema.sql, nauji stulpeliai/lentelės
+--  nepridedami — tam skirti atnaujinimas-*.sql failai.)
 -- ============================================================
 
 create extension if not exists pgcrypto;
@@ -64,6 +67,10 @@ returns boolean language sql stable security definer set search_path = public as
     false
   );
 $$;
+
+-- Aiškios teisės (nuoseklumui su manages()): RLS funkcijas turi galėti kviesti prisijungę.
+grant execute on function public.my_darbuotojas_id() to authenticated;
+grant execute on function public.is_admin() to authenticated;
 
 -- ---------- Paskyrų susiejimas ----------
 -- Kai žmogus registruojasi su el. paštu, kurį adminas įrašė

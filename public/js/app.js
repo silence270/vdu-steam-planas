@@ -97,6 +97,14 @@
     { id: "komanda", label: "Komanda" }
   ];
 
+  // Veiksmai, kuriais rašoma į DB — peržiūros režime (žiūrėti kaip narys) blokuojami.
+  var WRITE_ACTIONS = {
+    "new-task": 1, "new-pool-task": 1, "take-task": 1, "assign-task": 1, "split-task": 1,
+    "new-shift": 1, "open-shift": 1, "new-emp": 1, "open-emp": 1, "open-vacations": 1, "del-vacation": 1,
+    "import": 1, "avail-add": 1, "avail-negaliu": 1, "avail-reset": 1, "avail-del": 1,
+    "avail-tmpl-negaliu": 1, "avail-tmpl-reset": 1
+  };
+
   // ---------- programėlės diegimas ----------
 
   var installEvt = null;
@@ -212,6 +220,8 @@
   function isAdmin() { return !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
   function isManager() { return !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
+  // Ar dabar admino „žiūrėti kaip narys" peržiūra (tada rašyti draudžiama).
+  function viewingAs() { return !!(S.realMe && S.viewAsId && S.me && S.me.id !== S.realMe.id); }
   // Ar dabartinis vartotojas kuruoja darbuotoją empId (gali valdyti jo darbus/grafiką)?
   function managesEmp(empId) {
     if (!S.me || !empId) return false;
@@ -1235,6 +1245,7 @@
   function taskModal(task, opts) {
     opts = opts || {};
     var isNew = !task;
+    var canEditTaskModal = !viewingAs() && (isNew || canEditTask(task));
     var t = task || {
       pavadinimas: "", aprasymas: "", valandos: 4, terminas: "",
       prioritetas: "vidutinis", statusas: "laukia", kategorija: "",
@@ -1262,9 +1273,9 @@
         (isNew ? '<div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="pranesti_visiems" style="width:auto"> Pranešti visiems (visa komanda gaus pranešimą)</label></div>' : "") +
         '<div class="form-error" id="task-err"></div>' +
         '<div class="modal-actions">' +
-          (!isNew && canEditTask(task) ? '<button type="button" class="btn-ghost left" id="task-del" style="color:var(--red)">Ištrinti</button>' : "") +
-          '<button type="button" class="btn-outline" data-action="close-modal">Atšaukti</button>' +
-          '<button type="submit" class="btn">Išsaugoti</button>' +
+          (!isNew && canEditTask(task) && !viewingAs() ? '<button type="button" class="btn-ghost left" id="task-del" style="color:var(--red)">Ištrinti</button>' : "") +
+          '<button type="button" class="btn-outline" data-action="close-modal">' + (canEditTaskModal ? "Atšaukti" : "Uždaryti") + "</button>" +
+          (canEditTaskModal ? '<button type="submit" class="btn">Išsaugoti</button>' : '<span class="hint" style="align-self:center;margin-left:auto">Tik peržiūra</span>') +
         "</div>" +
       "</form>" +
       (!isNew ? '<div class="kom-sec"><div class="section-label" style="margin-top:16px">Komentarai</div>' +
@@ -1273,6 +1284,7 @@
     );
     ov.querySelector("#task-form").addEventListener("submit", async function (ev) {
       ev.preventDefault();
+      if (!canEditTaskModal) { closeModal(); return; }
       var fd = new FormData(ev.target);
       var obj = {
         pavadinimas: String(fd.get("pavadinimas")).trim(),
@@ -1330,6 +1342,7 @@
     var komSend = ov.querySelector("#kom-send");
     if (komSend) {
       var sendComment = async function () {
+        if (viewingAs()) { toast("Peržiūros režimas — komentuoti negalima."); return; }
         var inp = ov.querySelector("#kom-input");
         var txt = String(inp.value || "").trim();
         if (!txt || !S.me) return;
@@ -1585,6 +1598,11 @@
           '<div class="form-row"><label>Spalva</label><input type="color" name="spalva" value="' + esc(e.spalva || "#5B5BD6") + '" style="height:40px;padding:4px"></div>' +
         "</div>" +
         '<div class="form-row"><label>Atsakomybės</label><textarea name="atsakomybes" placeholder="Už ką žmogus atsakingas — matys visa komanda">' + esc(e.atsakomybes || "") + "</textarea></div>" +
+        '<div class="form-row"><label>Kuratorius <span class="hint">(kas gali tvarkyti šio žmogaus darbus/grafiką, be admino)</span></label><select name="kuratorius_id"><option value="">— Nėra —</option>' +
+          activeEmployees().filter(function (k) { return !emp || k.id !== emp.id; }).map(function (k) {
+            return '<option value="' + k.id + '"' + (e.kuratorius_id === k.id ? " selected" : "") + ">" + esc(k.vardas) + (k.role === "vadovas" ? " (vadovas)" : "") + "</option>";
+          }).join("") +
+        "</select></div>" +
         (!isNew ? '<div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="aktyvus" style="width:auto"' + (e.aktyvus ? " checked" : "") + "> Aktyvus (rodomas sąrašuose)</label></div>" : "") +
         '<div class="form-error" id="emp-err"></div>' +
         '<div class="modal-actions">' +
@@ -1604,6 +1622,7 @@
         savaites_valandos: (function () { var et = Number(fd.get("etatas")); return et > 0 ? Math.round(et * 40 * 100) / 100 : 40; })(),
         spalva: fd.get("spalva"),
         atsakomybes: String(fd.get("atsakomybes") || "").trim(),
+        kuratorius_id: fd.get("kuratorius_id") || null,
         aktyvus: isNew ? true : fd.get("aktyvus") === "on"
       };
       if (!obj.vardas) return;
@@ -2221,6 +2240,11 @@
     var action = el.getAttribute("data-action");
     var id = el.getAttribute("data-id");
 
+    if (viewingAs() && WRITE_ACTIONS[action]) {
+      toast("Peržiūros režimas — redaguoti negalima. Grįžkite į savo vaizdą.");
+      return;
+    }
+
     switch (action) {
       case "nav":
         var nv = el.getAttribute("data-view");
@@ -2556,6 +2580,7 @@
     if (!el) return;
     var what = el.getAttribute("data-change");
     if (what === "task-status") {
+      if (viewingAs()) { toast("Peržiūros režimas — redaguoti negalima."); render(); return; }
       var id = el.getAttribute("data-id");
       var t = S.tasks.find(function (x) { return x.id === id; });
       var patch = { statusas: el.value };

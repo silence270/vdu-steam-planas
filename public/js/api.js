@@ -15,7 +15,7 @@ window.API = (function () {
   // Ar duomenų bazėje jau yra naujesni stulpeliai/lentelės (atnaujinimas-1.sql).
   // Optimistiškai true; fetchAll patikslina. Jei dar ne — appsas nemeta klaidų,
   // tik tų funkcijų neleidžia, kol adminas paleidžia atnaujinimą.
-  var caps = { taskExtras: true, extraTables: true, availability: true };
+  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true };
 
   var DEMO_KEY = "steamPlanas.demo.v1";
   var DEMO_USER_KEY = "steamPlanas.demoUser";
@@ -145,7 +145,14 @@ window.API = (function () {
     return {
       version: 1, employees: employees, tasks: tasks, shifts: shifts,
       komentarai: komentarai, pranesimai: pranesimai, atostogos: atostogos,
-      prieinamumas_sablonas: [], prieinamumas: []
+      prieinamumas_sablonas: [
+        { id: uid(), darbuotojas_id: "d01", savaite_diena: 1, nuo: "09:00", iki: "13:00", nedirba: false },
+        { id: uid(), darbuotojas_id: "d01", savaite_diena: 3, nuo: "09:00", iki: "13:00", nedirba: false },
+        { id: uid(), darbuotojas_id: "d04", savaite_diena: 2, nuo: "10:00", iki: "16:00", nedirba: false },
+        { id: uid(), darbuotojas_id: "d04", savaite_diena: 5, nuo: null, iki: null, nedirba: true },
+        { id: uid(), darbuotojas_id: "d06", savaite_diena: 4, nuo: "08:00", iki: "12:00", nedirba: false }
+      ],
+      prieinamumas: []
     };
   }
 
@@ -282,6 +289,8 @@ window.API = (function () {
       // Atskirai patikrinam, ar uzduotys turi naujus stulpelius (atlikta_at, kategorija)
       var colProbe = await sb.from("uzduotys").select("atlikta_at, kategorija").limit(1);
       caps.taskExtras = !colProbe.error;
+      var curProbe = await sb.from("darbuotojai").select("kuratorius_id").limit(1);
+      caps.curator = !curProbe.error;
       caps.extraTables = !migrationNeeded;
       // Prieinamumas (atnaujinimas-4) — jei lentelių dar nėra, tyliai praleidžiam.
       var avail = await Promise.all([
@@ -334,6 +343,15 @@ window.API = (function () {
     }
     return obj;
   }
+  // Pašalina kuratorius_id, jei DB stulpelio dar nėra (atnaujinimas-2 nepaleistas).
+  function stripEmp(obj) {
+    if (mode === "supabase" && !caps.curator && obj && obj.hasOwnProperty("kuratorius_id")) {
+      var copy = {};
+      for (var k in obj) { if (obj.hasOwnProperty(k) && k !== "kuratorius_id") copy[k] = obj[k]; }
+      return copy;
+    }
+    return obj;
+  }
   function needExtraTables() {
     if (mode === "supabase" && !caps.extraTables) {
       throw new Error("Šiai funkcijai reikia duomenų bazės atnaujinimo. Administratorius: Supabase SQL Editor paleiskite atnaujinimas-1.sql.");
@@ -365,7 +383,7 @@ window.API = (function () {
   }
 
   async function addEmployee(obj) {
-    if (mode === "supabase") return sbInsert("darbuotojai", obj);
+    if (mode === "supabase") return sbInsert("darbuotojai", stripEmp(obj));
     return demoMutate(function (d) {
       obj.id = uid();
       obj.user_id = null;
@@ -374,7 +392,7 @@ window.API = (function () {
     });
   }
   async function updateEmployee(id, patch) {
-    if (mode === "supabase") return sbUpdate("darbuotojai", id, patch);
+    if (mode === "supabase") return sbUpdate("darbuotojai", id, stripEmp(patch));
     return demoMutate(function (d) {
       var e = d.employees.find(function (x) { return x.id === id; });
       if (e) Object.assign(e, patch);
@@ -588,16 +606,15 @@ window.API = (function () {
     if (mode === "supabase") {
       onStatus("poll");
       startPolling();
-      channel = sb.channel("db-changes")
-        .on("postgres_changes", { event: "*", schema: "public", table: "darbuotojai" }, debouncedRefetch)
-        .on("postgres_changes", { event: "*", schema: "public", table: "uzduotys" }, debouncedRefetch)
-        .on("postgres_changes", { event: "*", schema: "public", table: "tvarkarastis" }, debouncedRefetch)
-        .on("postgres_changes", { event: "*", schema: "public", table: "komentarai" }, debouncedRefetch)
-        .on("postgres_changes", { event: "*", schema: "public", table: "pranesimai" }, debouncedRefetch)
-        .on("postgres_changes", { event: "*", schema: "public", table: "atostogos" }, debouncedRefetch)
-        .on("postgres_changes", { event: "*", schema: "public", table: "prieinamumas_sablonas" }, debouncedRefetch)
-        .on("postgres_changes", { event: "*", schema: "public", table: "prieinamumas" }, debouncedRefetch)
-        .subscribe(function (status) {
+      // Prenumeruojam tik egzistuojančias lenteles (kitaip kanalas nukristų į poll).
+      var rtTables = ["darbuotojai", "uzduotys", "tvarkarastis"];
+      if (caps.extraTables) rtTables = rtTables.concat(["komentarai", "pranesimai", "atostogos"]);
+      if (caps.availability) rtTables = rtTables.concat(["prieinamumas_sablonas", "prieinamumas"]);
+      channel = sb.channel("db-changes");
+      rtTables.forEach(function (tbl) {
+        channel = channel.on("postgres_changes", { event: "*", schema: "public", table: tbl }, debouncedRefetch);
+      });
+      channel.subscribe(function (status) {
           if (stopped) return;
           if (status === "SUBSCRIBED") {
             onStatus("live");
