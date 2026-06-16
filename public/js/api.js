@@ -15,7 +15,7 @@ window.API = (function () {
   // Ar duomenų bazėje jau yra naujesni stulpeliai/lentelės (atnaujinimas-1.sql).
   // Optimistiškai true; fetchAll patikslina. Jei dar ne — appsas nemeta klaidų,
   // tik tų funkcijų neleidžia, kol adminas paleidžia atnaujinimą.
-  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true };
+  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true };
 
   var DEMO_KEY = "steamPlanas.demo.v1";
   var DEMO_USER_KEY = "steamPlanas.demoUser";
@@ -291,6 +291,8 @@ window.API = (function () {
       caps.taskExtras = !colProbe.error;
       var curProbe = await sb.from("darbuotojai").select("kuratorius_id").limit(1);
       caps.curator = !curProbe.error;
+      var ttProbe = await sb.from("uzduotys").select("terminas_laikas").limit(1);
+      caps.taskTime = !ttProbe.error;
       caps.extraTables = !migrationNeeded;
       // Prieinamumas (atnaujinimas-4) — jei lentelių dar nėra, tyliai praleidžiam.
       var avail = await Promise.all([
@@ -318,7 +320,7 @@ window.API = (function () {
         vacations: extras[2].data || [],
         availTemplate: trimT(avail[0].data),
         availability: trimT(avail[1].data),
-        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability
+        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime
       };
     }
     caps.taskExtras = true;
@@ -334,14 +336,16 @@ window.API = (function () {
 
   // Pašalina laukus, kurių DB dar neturi, kad nemestų klaidos.
   function stripUnsupported(obj) {
-    if (mode === "supabase" && !caps.taskExtras) {
-      var copy = {};
-      for (var k in obj) {
-        if (obj.hasOwnProperty(k) && k !== "atlikta_at" && k !== "kategorija") copy[k] = obj[k];
-      }
-      return copy;
+    if (mode !== "supabase") return obj;
+    var drop = null;
+    if (!caps.taskExtras) drop = { atlikta_at: 1, kategorija: 1 };
+    if (!caps.taskTime) { drop = drop || {}; drop.terminas_laikas = 1; }
+    if (!drop) return obj;
+    var copy = {};
+    for (var k in obj) {
+      if (obj.hasOwnProperty(k) && !drop[k]) copy[k] = obj[k];
     }
-    return obj;
+    return copy;
   }
   // Pašalina kuratorius_id, jei DB stulpelio dar nėra (atnaujinimas-2 nepaleistas).
   function stripEmp(obj) {
@@ -673,7 +677,7 @@ window.API = (function () {
     deleteAvailability: deleteAvailability,
     clearAvailabilityForDate: clearAvailabilityForDate,
     clearAvailTemplateForWeekday: clearAvailTemplateForWeekday,
-    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability }; },
+    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability, curator: caps.curator, taskTime: caps.taskTime }; },
     subscribe: subscribe
   };
 })();

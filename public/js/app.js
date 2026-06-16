@@ -475,7 +475,7 @@
   function migrationBannerHtml() {
     if (!S.migrationNeeded || !isAdmin()) return "";
     return '<div class="card" style="border-color:#F2A33C;margin-bottom:14px"><b>Reikia duomenų bazės atnaujinimo.</b>' +
-      '<div class="hint">Naujoms funkcijoms Supabase SQL Editor lange paleiskite naujausius failus iš aplanko <b>supabase/</b> (<b>atnaujinimas-1.sql</b> … <b>atnaujinimas-4.sql</b>) eilės tvarka. Iki tol kai kurios funkcijos (rolės, kuratoriai, prieinamumas) veikia ribotai.</div></div>';
+      '<div class="hint">Naujoms funkcijoms Supabase SQL Editor lange paleiskite naujausius failus iš aplanko <b>supabase/</b> (<b>atnaujinimas-1.sql</b> … <b>atnaujinimas-5.sql</b>) eilės tvarka. Iki tol kai kurios funkcijos (rolės, kuratoriai, prieinamumas, darbų laikas) veikia ribotai.</div></div>';
   }
 
   function notifsModal() {
@@ -603,7 +603,7 @@
     return '<div class="pool-card">' +
       '<div class="t-main"><div class="t-title">' + esc(t.pavadinimas) + "</div>" +
         '<div class="t-meta"><span>' + (Number(t.valandos) || 0) + " val.</span>" +
-        (t.terminas ? "<span>Iki " + fmtShort(t.terminas) + "</span>" : "") +
+        (t.terminas ? "<span>Iki " + fmtShort(t.terminas) + (tLaikas(t) ? " " + esc(tLaikas(t)) : "") + "</span>" : "") +
         '<span class="chip ' + PRIO_CHIP[t.prioritetas] + '">' + PRIO[t.prioritetas] + "</span>" + katBadge(t) + "</div>" +
       "</div>" +
       '<div class="t-actions">' + actions + "</div>" +
@@ -667,7 +667,7 @@
         '<div class="t-meta">' +
           "<span>" + (emp ? esc(emp.vardas) : "Nepriskirta") + "</span>" +
           "<span>" + (Number(t.valandos) || 0) + " val.</span>" +
-          (t.terminas ? '<span class="' + (overdue ? "overdue" : "") + '">Iki ' + fmtShort(t.terminas) + (overdue ? " (vėluoja)" : "") + "</span>" : "") +
+          (t.terminas ? '<span class="' + (overdue ? "overdue" : "") + '">Iki ' + fmtShort(t.terminas) + (tLaikas(t) ? " " + esc(tLaikas(t)) : "") + (overdue ? " (vėluoja)" : "") + "</span>" : "") +
           dueBadge(t) +
           '<span class="chip ' + PRIO_CHIP[t.prioritetas] + '">' + PRIO[t.prioritetas] + "</span>" +
           katBadge(t) +
@@ -767,6 +767,8 @@
   function tasksDueOn(empId, dayIso) {
     return S.tasks.filter(function (t) { return t.darbuotojas_id === empId && t.terminas === dayIso && t.statusas !== "atlikta"; });
   }
+  // Darbo termino tikslus laikas „HH:MM" arba "" (jei nenurodyta / DB nepalaiko).
+  function tLaikas(t) { return t && t.terminas_laikas ? String(t.terminas_laikas).slice(0, 5) : ""; }
 
   function viewTvarkarastis() {
     var mon = startOfWeek(S.weekOffset);
@@ -820,7 +822,7 @@
           "</span>";
         }).join("");
         var tItems = tasksDueOn(e.id, dIso).map(function (t) {
-          return '<span class="task-pill prio-' + esc(t.prioritetas) + '" data-action="open-task" data-id="' + t.id + '" title="Darbo terminas">⚑ ' + esc(t.pavadinimas) + "</span>";
+          return '<span class="task-pill prio-' + esc(t.prioritetas) + '" data-action="open-task" data-id="' + t.id + '" title="Darbo terminas">⚑ ' + (tLaikas(t) ? esc(tLaikas(t)) + " " : "") + esc(t.pavadinimas) + "</span>";
         }).join("");
         var negHtml = (!vac && resolveAvail(e.id, dIso, ((d.getDay() + 6) % 7) + 1).nedirba) ? '<span class="shift-pill neg-pill">Negaliu</span>' : "";
         var add = (canRow && !vac) ? '<button class="cell-add" data-action="new-shift" data-emp="' + e.id + '" data-date="' + dIso + '" title="Pridėti">+</button>' : "";
@@ -867,7 +869,7 @@
     var taskListM = dayTasksM.length ? '<div class="section-label">Darbų terminai</div>' + dayTasksM.map(function (t) {
       var te = getEmp(t.darbuotojas_id);
       return '<div class="task-row" data-action="open-task" data-id="' + t.id + '">' +
-        '<div class="t-main"><div class="t-title">⚑ ' + esc(t.pavadinimas) + "</div>" +
+        '<div class="t-main"><div class="t-title">⚑ ' + (tLaikas(t) ? esc(tLaikas(t)) + " " : "") + esc(t.pavadinimas) + "</div>" +
         '<div class="t-meta">' + (te ? "<span>" + esc(te.vardas) + "</span>" : "<span>Bendra</span>") + '<span class="chip ' + PRIO_CHIP[t.prioritetas] + '">' + PRIO[t.prioritetas] + "</span>" + katBadge(t) + "</div></div></div>";
     }).join("") : "";
 
@@ -1259,6 +1261,7 @@
         '<div class="form-grid">' +
           '<div class="form-row"><label>Valandos</label><input type="number" name="valandos" min="0" step="0.5" value="' + esc(t.valandos) + '"></div>' +
           '<div class="form-row"><label>Terminas</label>' + datePickerHtml("terminas", t.terminas || "") + "</div>" +
+          '<div class="form-row"><label>Laikas (nebūtina)</label><input type="time" name="terminas_laikas" value="' + esc(t.terminas_laikas ? String(t.terminas_laikas).slice(0, 5) : "") + '"></div>' +
           '<div class="form-row"><label>Prioritetas</label><select name="prioritetas">' +
             Object.keys(PRIO).map(function (k) { return '<option value="' + k + '"' + (t.prioritetas === k ? " selected" : "") + ">" + PRIO[k] + "</option>"; }).join("") +
           "</select></div>" +
@@ -1291,6 +1294,7 @@
         darbuotojas_id: fd.get("darbuotojas_id") || null,
         valandos: Number(fd.get("valandos")) || 0,
         terminas: fd.get("terminas") || null,
+        terminas_laikas: fd.get("terminas_laikas") || null,
         prioritetas: fd.get("prioritetas"),
         statusas: fd.get("statusas"),
         kategorija: fd.get("kategorija") || "",
@@ -1967,7 +1971,7 @@
       }).join("");
       var dtasks = S.tasks.filter(function (t) { return t.terminas === iso && t.statusas !== "atlikta"; });
       var taskHtml = dtasks.slice(0, 4).map(function (t) {
-        return '<div class="tv-shift tv-task"><span class="tv-shift-n">⚑ ' + esc(t.pavadinimas) + "</span></div>";
+        return '<div class="tv-shift tv-task"><span class="tv-shift-n">⚑ ' + (tLaikas(t) ? esc(tLaikas(t)) + " " : "") + esc(t.pavadinimas) + "</span></div>";
       }).join("");
       out += '<div class="tv-day' + (iso === todayI ? " today" : "") + '">' +
         '<div class="tv-day-h">' + DAYS_SHORT[i] + " <span>" + dnum + "</span></div>" +
@@ -1984,7 +1988,7 @@
     if (!up.length) return '<div class="empty">Artimiausių terminų nėra.</div>';
     return up.map(function (t) {
       var e = getEmp(t.darbuotojas_id);
-      return '<div class="tv-line"><span class="tv-line-d">' + esc(fmtShort(t.terminas)) + "</span>" +
+      return '<div class="tv-line"><span class="tv-line-d">' + esc(fmtShort(t.terminas)) + (tLaikas(t) ? " " + esc(tLaikas(t)) : "") + "</span>" +
         '<span class="tv-line-t">' + esc(t.pavadinimas) + "</span>" +
         '<span class="tv-line-w">' + esc(e ? shortName(e.vardas) : "—") + "</span></div>";
     }).join("");
