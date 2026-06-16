@@ -10,6 +10,8 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # kad paskutinis žingsnis galėtų git push'inti kopiją
     steps:
       - name: Parsisiųsti repozitoriją
         uses: actions/checkout@v4
