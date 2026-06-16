@@ -15,7 +15,7 @@ window.API = (function () {
   // Ar duomenų bazėje jau yra naujesni stulpeliai/lentelės (atnaujinimas-1.sql).
   // Optimistiškai true; fetchAll patikslina. Jei dar ne — appsas nemeta klaidų,
   // tik tų funkcijų neleidžia, kol adminas paleidžia atnaujinimą.
-  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true };
+  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true, lists: true };
 
   var DEMO_KEY = "steamPlanas.demo.v1";
   var DEMO_USER_KEY = "steamPlanas.demoUser";
@@ -142,9 +142,15 @@ window.API = (function () {
       { id: uid(), darbuotojas_id: "d15", nuo: day(0), iki: day(6), tipas: "atostogos", pastaba: "" }
     ];
 
+    var sarasaiSeed = [];
+    [["veiklos_tipas", ["Susirinkimas", "Veikla", "Mokymai", "Dirbtuvės"]],
+     ["kategorija", ["Edukacija", "Renginys", "Susirinkimas", "Administracija", "Metodinė veikla", "Projektas", "Kita"]],
+     ["nedarbo_tipas", ["Atostogos", "Liga", "Kita"]]
+    ].forEach(function (g) { g[1].forEach(function (r, i) { sarasaiSeed.push({ id: uid(), grupe: g[0], reiksme: r, tvarka: i + 1 }); }); });
     return {
       version: 1, employees: employees, tasks: tasks, shifts: shifts,
       komentarai: komentarai, pranesimai: pranesimai, atostogos: atostogos,
+      app_sarasai: sarasaiSeed,
       prieinamumas_sablonas: [
         { id: uid(), darbuotojas_id: "d01", savaite_diena: 1, nuo: "09:00", iki: "13:00", nedirba: false },
         { id: uid(), darbuotojas_id: "d01", savaite_diena: 3, nuo: "09:00", iki: "13:00", nedirba: false },
@@ -169,6 +175,7 @@ window.API = (function () {
           parsed.atostogos = parsed.atostogos || [];
           parsed.prieinamumas_sablonas = parsed.prieinamumas_sablonas || [];
           parsed.prieinamumas = parsed.prieinamumas || [];
+          parsed.app_sarasai = parsed.app_sarasai || [];
           return parsed;
         }
       }
@@ -300,6 +307,8 @@ window.API = (function () {
         sb.from("prieinamumas").select("*")
       ]);
       caps.availability = !avail[0].error && !avail[1].error;
+      var listsRes = await sb.from("app_sarasai").select("*").order("tvarka");
+      caps.lists = !listsRes.error;
       function trimT(rows) {
         return (rows || []).map(function (r) {
           if (r.nuo != null) r.nuo = String(r.nuo).slice(0, 5);
@@ -320,7 +329,8 @@ window.API = (function () {
         vacations: extras[2].data || [],
         availTemplate: trimT(avail[0].data),
         availability: trimT(avail[1].data),
-        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime
+        sarasai: listsRes.data || [],
+        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime || !caps.lists
       };
     }
     caps.taskExtras = true;
@@ -330,6 +340,7 @@ window.API = (function () {
       employees: d.employees.slice(), tasks: d.tasks.slice(), shifts: d.shifts.slice(),
       comments: d.komentarai.slice(), notifications: d.pranesimai.slice(), vacations: d.atostogos.slice(),
       availTemplate: d.prieinamumas_sablonas.slice(), availability: d.prieinamumas.slice(),
+      sarasai: d.app_sarasai.slice(),
       migrationNeeded: false
     };
   }
@@ -352,6 +363,15 @@ window.API = (function () {
     if (mode === "supabase" && !caps.curator && obj && obj.hasOwnProperty("kuratorius_id")) {
       var copy = {};
       for (var k in obj) { if (obj.hasOwnProperty(k) && k !== "kuratorius_id") copy[k] = obj[k]; }
+      return copy;
+    }
+    return obj;
+  }
+  // Pašalina tvarkaraščio tipas/vieta, jei DB stulpelių dar nėra (atnaujinimas-6 nepaleistas).
+  function stripShift(obj) {
+    if (mode === "supabase" && !caps.lists && obj && (obj.hasOwnProperty("tipas") || obj.hasOwnProperty("vieta"))) {
+      var copy = {};
+      for (var k in obj) { if (obj.hasOwnProperty(k) && k !== "tipas" && k !== "vieta") copy[k] = obj[k]; }
       return copy;
     }
     return obj;
@@ -428,7 +448,7 @@ window.API = (function () {
   }
 
   async function addShift(obj) {
-    if (mode === "supabase") return sbInsert("tvarkarastis", obj);
+    if (mode === "supabase") return sbInsert("tvarkarastis", stripShift(obj));
     return demoMutate(function (d) {
       obj.id = uid();
       d.shifts.push(obj);
@@ -436,7 +456,7 @@ window.API = (function () {
     });
   }
   async function updateShift(id, patch) {
-    if (mode === "supabase") return sbUpdate("tvarkarastis", id, patch);
+    if (mode === "supabase") return sbUpdate("tvarkarastis", id, stripShift(patch));
     return demoMutate(function (d) {
       var s = d.shifts.find(function (x) { return x.id === id; });
       if (s) Object.assign(s, patch);
@@ -576,6 +596,22 @@ window.API = (function () {
     });
   }
 
+  // ---------- Valdomi sąrašai (kategorijos, veiklų tipai ir kt.) ----------
+  function needLists() {
+    if (mode === "supabase" && !caps.lists) {
+      throw new Error("Šiai funkcijai reikia duomenų bazės atnaujinimo: atnaujinimas-6.sql.");
+    }
+  }
+  async function addListItem(obj) {
+    needLists();
+    if (mode === "supabase") return sbInsert("app_sarasai", obj);
+    return demoMutate(function (d) { obj.id = uid(); obj.created_at = new Date().toISOString(); d.app_sarasai.push(obj); return obj; });
+  }
+  async function deleteListItem(id) {
+    if (mode === "supabase") return sbDelete("app_sarasai", id);
+    return demoMutate(function (d) { d.app_sarasai = d.app_sarasai.filter(function (x) { return x.id !== id; }); });
+  }
+
   // ---------- gyvas atsinaujinimas ----------
 
   function subscribe(onData, onStatus) {
@@ -614,6 +650,7 @@ window.API = (function () {
       var rtTables = ["darbuotojai", "uzduotys", "tvarkarastis"];
       if (caps.extraTables) rtTables = rtTables.concat(["komentarai", "pranesimai", "atostogos"]);
       if (caps.availability) rtTables = rtTables.concat(["prieinamumas_sablonas", "prieinamumas"]);
+      if (caps.lists) rtTables = rtTables.concat(["app_sarasai"]);
       channel = sb.channel("db-changes");
       rtTables.forEach(function (tbl) {
         channel = channel.on("postgres_changes", { event: "*", schema: "public", table: tbl }, debouncedRefetch);
@@ -677,7 +714,9 @@ window.API = (function () {
     deleteAvailability: deleteAvailability,
     clearAvailabilityForDate: clearAvailabilityForDate,
     clearAvailTemplateForWeekday: clearAvailTemplateForWeekday,
-    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability, curator: caps.curator, taskTime: caps.taskTime }; },
+    addListItem: addListItem,
+    deleteListItem: deleteListItem,
+    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability, curator: caps.curator, taskTime: caps.taskTime, lists: caps.lists }; },
     subscribe: subscribe
   };
 })();

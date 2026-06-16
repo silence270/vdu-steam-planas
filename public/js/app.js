@@ -79,6 +79,13 @@
   var MONTHS_NOM = ["Sausis", "Vasaris", "Kovas", "Balandis", "Gegužė", "Birželis", "Liepa", "Rugpjūtis", "Rugsėjis", "Spalis", "Lapkritis", "Gruodis"];
   var VAC_LABEL = { atostogos: "Atostogos", liga: "Liga", kita: "Kita" };
   var CATEGORIES = ["Edukacija", "Renginys", "Susirinkimas", "Administracija", "Metodinė veikla", "Projektas", "Kita"];
+  var LIST_DEFAULTS = {
+    veiklos_tipas: ["Susirinkimas", "Veikla", "Mokymai", "Dirbtuvės"],
+    kategorija: CATEGORIES,
+    nedarbo_tipas: ["Atostogos", "Liga", "Kita"],
+    vieta: []
+  };
+  var SARASAI_LABELS = { veiklos_tipas: "Veiklų tipai (tvarkaraščiui)", kategorija: "Darbų kategorijos", nedarbo_tipas: "Nedarbo tipai", vieta: "Patalpos / vietos" };
   var MONTHS_SHORT = ["saus.", "vas.", "kov.", "bal.", "geg.", "birž.", "liep.", "rugp.", "rugs.", "spal.", "lapkr.", "gruod."];
 
   var ICONS = {
@@ -217,6 +224,15 @@
   function activeEmployees() {
     return S.employees.filter(function (e) { return e.aktyvus; });
   }
+  // Valdomo sąrašo reikšmės (iš DB, arba numatytosios jei dar tuščia/be migracijos).
+  function listValues(grupe) {
+    var fromDb = (S.sarasai || [])
+      .filter(function (x) { return x.grupe === grupe; })
+      .sort(function (a, b) { return (a.tvarka - b.tvarka) || (a.reiksme < b.reiksme ? -1 : 1); })
+      .map(function (x) { return x.reiksme; });
+    return fromDb.length ? fromDb : (LIST_DEFAULTS[grupe] || []);
+  }
+  function vacLabel(tipas) { return VAC_LABEL[tipas] || tipas || ""; }
   function isAdmin() { return !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
   function isManager() { return !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
@@ -292,6 +308,7 @@
     S.vacations = data.vacations || [];
     S.availability = data.availability || [];
     S.availTemplate = data.availTemplate || [];
+    S.sarasai = data.sarasai || [];
     S.migrationNeeded = !!data.migrationNeeded;
     resolveMe();
     detectNewNotifications();
@@ -549,7 +566,7 @@
       return '<div class="ring-item" data-action="goto-emp-tasks" data-id="' + r.e.id + '" title="Rodyti darbus">' +
         ringHtml(r.e, r.l, r.vac) +
         '<div class="ring-name">' + esc(shortName(r.e.vardas)) + "</div>" +
-        '<div class="ring-sub">' + (r.vac ? VAC_LABEL[r.vac.tipas] : r.l.hours + " / " + r.l.cap + " val.") + "</div>" +
+        '<div class="ring-sub">' + (r.vac ? vacLabel(r.vac.tipas) : r.l.hours + " / " + r.l.cap + " val.") + "</div>" +
       "</div>";
     }).join("") + "</div>";
   }
@@ -567,7 +584,7 @@
           '<div style="min-width:0"><div class="name">' + esc(r.e.vardas) + '</div><div class="role">' + esc(r.e.pareigos || "") + "</div></div>" +
         "</div>" +
         '<div class="track"><div class="fill ' + fillClass(r.l.pct) + '" style="width:' + Math.min(100, r.l.pct) + '%"></div></div>' +
-        '<div class="nums">' + r.l.pct + "% " + (r.vac ? '<span class="chip chip-blue">' + VAC_LABEL[r.vac.tipas] + "</span>" : loadBadge(r.l.pct)) + "<small>" + r.l.hours + " val. iš " + r.l.cap + "</small></div>" +
+        '<div class="nums">' + r.l.pct + "% " + (r.vac ? '<span class="chip chip-blue">' + vacLabel(r.vac.tipas) + "</span>" : loadBadge(r.l.pct)) + "<small>" + r.l.hours + " val. iš " + r.l.cap + "</small></div>" +
       "</div>";
     }).join("");
   }
@@ -737,7 +754,7 @@
         '<option value="atlikta"' + (f.status === "atlikta" ? " selected" : "") + ">Atlikti</option>" +
       "</select>" +
       '<select data-change="filter-kat"><option value="">Visos kategorijos</option>' +
-        CATEGORIES.map(function (c) { return '<option value="' + esc(c) + '"' + (f.kat === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") +
+        listValues("kategorija").map(function (c) { return '<option value="' + esc(c) + '"' + (f.kat === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") +
       "</select>" +
     "</div>";
 
@@ -812,12 +829,13 @@
         var vac = vacationOf(e.id, dIso);
         var vacHtml = vac ? '<span class="shift-pill vac-pill"' +
           (canRow ? ' data-action="open-vacations" data-id="' + e.id + '"' : "") + ">" +
-          VAC_LABEL[vac.tipas] + "</span>" : "";
+          vacLabel(vac.tipas) + "</span>" : "";
         var items = shiftsFor(e.id, dIso).map(function (s) {
           var canS = canEditShift(s);
           return '<span class="shift-pill" style="background:' + esc(e.spalva || "#5B5BD6") + '"' +
             (canS ? ' data-action="open-shift" data-id="' + s.id + '"' : "") + ">" +
             esc(s.nuo) + "–" + esc(s.iki) +
+            (s.tipas || s.vieta ? "<small>" + esc([s.tipas, s.vieta].filter(Boolean).join(" · ")) + "</small>" : "") +
             (s.pastaba ? "<small>" + esc(s.pastaba) + "</small>" : "") +
           "</span>";
         }).join("");
@@ -849,7 +867,7 @@
       var canS = canEditShift(s);
       return '<div class="task-row">' + avatarHtml(e) +
         '<div class="t-main"><div class="t-title">' + esc(e ? e.vardas : "?") + "</div>" +
-          '<div class="t-meta"><span>' + esc(s.nuo) + "–" + esc(s.iki) + "</span>" + (s.pastaba ? "<span>" + esc(s.pastaba) + "</span>" : "") + "</div>" +
+          '<div class="t-meta"><span>' + esc(s.nuo) + "–" + esc(s.iki) + "</span>" + (s.tipas ? "<span>" + esc(s.tipas) + "</span>" : "") + (s.vieta ? "<span>" + esc(s.vieta) + "</span>" : "") + (s.pastaba ? "<span>" + esc(s.pastaba) + "</span>" : "") + "</div>" +
         "</div>" +
         (canS ? '<button class="btn-ghost btn-sm" data-action="open-shift" data-id="' + s.id + '">Keisti</button>' : "") +
       "</div>";
@@ -961,7 +979,7 @@
     return '<div class="team-card">' +
       '<div class="head">' + avatarHtml(e, true) +
         '<div style="min-width:0"><div class="name">' + esc(e.vardas) + (e.role === "admin" ? ' <span class="chip chip-primary">Admin</span>' : (e.role === "vadovas" ? ' <span class="chip chip-amber">Vadovas</span>' : "")) +
-        (vac ? ' <span class="chip chip-blue">' + VAC_LABEL[vac.tipas] + "</span>" : "") + "</div>" +
+        (vac ? ' <span class="chip chip-blue">' + vacLabel(vac.tipas) + "</span>" : "") + "</div>" +
         '<div class="pareigos">' + esc(e.pareigos || "—") + "</div></div>" +
       "</div>" +
       '<div class="resp">' + (e.atsakomybes ? esc(e.atsakomybes) : '<span style="opacity:.6">Atsakomybės dar neaprašytos.</span>') + "</div>" +
@@ -984,6 +1002,7 @@
     var act = activeEmployees().filter(matchEmp);
     var inact = S.employees.filter(function (e) { return !e.aktyvus && matchEmp(e); });
     var html = '<div class="view-title"><h1>Komanda</h1><div class="actions">' +
+      (isAdmin() ? '<button class="btn-outline" data-action="settings">⚙ Nustatymai</button>' : "") +
       (isAdmin() ? '<button class="btn" data-action="new-emp">+ Pridėti darbuotoją</button>' : "") +
     "</div></div>";
     html += '<div class="toolbar"><input type="search" id="team-search" placeholder="Ieškoti žmogaus…" value="' + esc(S.teamQ) + '" data-input="team-search"></div>';
@@ -1207,6 +1226,27 @@
 
   // ---------- Modalai ----------
 
+  function settingsModal() {
+    if (!isAdmin()) return;
+    if (API.getCaps && !API.getCaps().lists) {
+      openModal("<h2>Nustatymai</h2><div class=\"hint\">Reikia duomenų bazės atnaujinimo. Administratorius: Supabase SQL Editor paleiskite <b>atnaujinimas-6.sql</b>.</div><div class=\"modal-actions\"><button type=\"button\" class=\"btn\" data-action=\"close-modal\">Uždaryti</button></div>");
+      return;
+    }
+    var html = "<h2>Nustatymai — sąrašai</h2><div class=\"hint\" style=\"margin-bottom:12px\">Pridėk ar šalink reikšmes — jos naudojamos išskleidžiamuose sąrašuose (tvarkaraščio veiklos tipas, darbų kategorijos, nedarbo tipai, vietos).</div>";
+    ["veiklos_tipas", "kategorija", "nedarbo_tipas", "vieta"].forEach(function (g) {
+      var vals = (S.sarasai || []).filter(function (x) { return x.grupe === g; })
+        .sort(function (a, b) { return (a.tvarka - b.tvarka) || (a.reiksme < b.reiksme ? -1 : 1); });
+      html += '<div class="set-group"><div class="section-label">' + esc(SARASAI_LABELS[g]) + "</div>" +
+        '<div class="set-chips">' + (vals.length ? vals.map(function (x) {
+          return '<span class="set-chip">' + esc(x.reiksme) + '<button type="button" class="set-x" data-action="set-del" data-id="' + x.id + '" title="Šalinti">×</button></span>';
+        }).join("") : '<span class="hint">Tuščia</span>') + "</div>" +
+        '<div class="set-add"><input type="text" class="set-input" data-grupe="' + g + '" placeholder="Pridėti naują…" maxlength="60"><button type="button" class="btn-outline btn-sm" data-action="set-add" data-grupe="' + g + '">+ Pridėti</button></div>' +
+      "</div>";
+    });
+    html += '<div class="modal-actions"><button type="button" class="btn" data-action="close-modal">Uždaryti</button></div>';
+    openModal(html);
+  }
+
   function openModal(innerHtml) {
     closeModal();
     var ov = document.createElement("div");
@@ -1269,7 +1309,7 @@
             Object.keys(STATUS).map(function (k) { return '<option value="' + k + '"' + (t.statusas === k ? " selected" : "") + ">" + STATUS[k] + "</option>"; }).join("") +
           "</select></div>" +
           '<div class="form-row"><label>Kategorija</label><select name="kategorija"><option value="">—</option>' +
-            CATEGORIES.map(function (c) { return '<option value="' + esc(c) + '"' + (t.kategorija === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") +
+            listValues("kategorija").map(function (c) { return '<option value="' + esc(c) + '"' + (t.kategorija === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") +
           "</select></div>" +
         "</div>" +
         '<div class="form-row"><label>Aprašymas</label><textarea name="aprasymas">' + esc(t.aprasymas || "") + "</textarea></div>" +
@@ -1398,7 +1438,7 @@
         return '<div class="pick-row" data-pick="' + r.e.id + '">' + avatarHtml(r.e) +
           '<span style="font-weight:600;white-space:nowrap">' + esc(r.e.vardas) + "</span>" +
           (i === 0 && !r.vac ? '<span class="chip chip-green">Siūloma</span>' : "") +
-          (r.vac ? '<span class="chip chip-blue">' + VAC_LABEL[r.vac.tipas] + "</span>" : "") +
+          (r.vac ? '<span class="chip chip-blue">' + vacLabel(r.vac.tipas) + "</span>" : "") +
           '<div class="track"><div class="fill ' + fillClass(r.l.pct) + '" style="width:' + Math.min(100, r.l.pct) + '%"></div></div>' +
           '<span class="pct">' + r.l.pct + "%</span>" +
         "</div>";
@@ -1537,7 +1577,11 @@
           '<div class="form-row"><label>Nuo</label><input type="time" name="nuo" required value="' + esc(s.nuo) + '"></div>' +
           '<div class="form-row"><label>Iki</label><input type="time" name="iki" required value="' + esc(s.iki) + '"></div>' +
         "</div>" +
-        '<div class="form-row"><label>Pastaba</label><input type="text" name="pastaba" maxlength="120" value="' + esc(s.pastaba || "") + '" placeholder="pvz., dirbtuvės, renginys…"></div>' +
+        '<div class="form-grid">' +
+          '<div class="form-row"><label>Veiklos tipas</label><select name="tipas"><option value="">—</option>' + listValues("veiklos_tipas").map(function (x) { return '<option value="' + esc(x) + '"' + (s.tipas === x ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("") + "</select></div>" +
+          '<div class="form-row"><label>Vieta</label><select name="vieta"><option value="">—</option>' + listValues("vieta").map(function (x) { return '<option value="' + esc(x) + '"' + (s.vieta === x ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("") + "</select></div>" +
+        "</div>" +
+        '<div class="form-row"><label>Pastaba</label><input type="text" name="pastaba" maxlength="120" value="' + esc(s.pastaba || "") + '" placeholder="pvz., papildoma info…"></div>' +
         '<div class="form-error" id="shift-err"></div>' +
         '<div class="modal-actions">' +
           (!isNew && canEditShift(shift) ? '<button type="button" class="btn-ghost left" id="shift-del" style="color:var(--red)">Ištrinti</button>' : "") +
@@ -1554,6 +1598,8 @@
         data: fd.get("data"),
         nuo: fd.get("nuo"),
         iki: fd.get("iki"),
+        tipas: fd.get("tipas") || "",
+        vieta: fd.get("vieta") || "",
         pastaba: String(fd.get("pastaba") || "").trim()
       };
       if (!obj.darbuotojas_id) {
@@ -1650,7 +1696,7 @@
     var list = S.vacations.filter(function (v) { return v.darbuotojas_id === emp.id; })
       .sort(function (a, b) { return a.nuo < b.nuo ? 1 : -1; });
     var items = list.length ? list.map(function (v) {
-      return '<div class="task-row"><div class="t-main"><div class="t-title">' + VAC_LABEL[v.tipas] + "</div>" +
+      return '<div class="task-row"><div class="t-main"><div class="t-title">' + vacLabel(v.tipas) + "</div>" +
         '<div class="t-meta"><span>' + v.nuo + " – " + v.iki + "</span>" + (v.pastaba ? "<span>" + esc(v.pastaba) + "</span>" : "") + "</div></div>" +
         (canEdit ? '<button class="btn-ghost btn-sm" data-action="del-vacation" data-id="' + v.id + '" data-emp="' + emp.id + '" style="color:var(--red)">Ištrinti</button>' : "") +
       "</div>";
@@ -1662,7 +1708,7 @@
           '<div class="form-grid">' +
             '<div class="form-row"><label>Nuo</label>' + datePickerHtml("nuo", todayIso()) + "</div>" +
             '<div class="form-row"><label>Iki</label>' + datePickerHtml("iki", todayIso()) + "</div>" +
-            '<div class="form-row"><label>Tipas</label><select name="tipas"><option value="atostogos">Atostogos</option><option value="liga">Liga</option><option value="kita">Kita</option></select></div>' +
+            '<div class="form-row"><label>Tipas</label><select name="tipas">' + (API.getCaps && API.getCaps().lists ? listValues("nedarbo_tipas") : ["atostogos", "liga", "kita"]).map(function (x) { return '<option value="' + esc(x) + '">' + esc(vacLabel(x)) + "</option>"; }).join("") + "</select></div>" +
             '<div class="form-row"><label>Pastaba</label><input type="text" name="pastaba" maxlength="120"></div>' +
           "</div>" +
           '<div class="form-error" id="vac-err"></div>' +
@@ -1686,7 +1732,7 @@
       }
       try {
         await API.addVacation(obj);
-        if (!isAdmin()) notifyAdmins(emp.vardas + ": pažymėta (" + VAC_LABEL[obj.tipas].toLowerCase() + ") " + obj.nuo + " – " + obj.iki, "komanda");
+        if (!isAdmin()) notifyAdmins(emp.vardas + ": pažymėta (" + vacLabel(obj.tipas).toLowerCase() + ") " + obj.nuo + " – " + obj.iki, "komanda");
         applyData(await API.fetchAll());
         toast("Įrašyta");
         vacationsModal(getEmp(emp.id) || emp);
@@ -1805,7 +1851,7 @@
       return String(v.nuo).slice(0, 7) <= month && month <= String(v.iki).slice(0, 7);
     }).map(function (v) {
       var emp = getEmp(v.darbuotojas_id);
-      return { "Vardas": emp ? emp.vardas : "?", "Tipas": VAC_LABEL[v.tipas], "Nuo": v.nuo, "Iki": v.iki, "Pastaba": v.pastaba || "" };
+      return { "Vardas": emp ? emp.vardas : "?", "Tipas": vacLabel(v.tipas), "Nuo": v.nuo, "Iki": v.iki, "Pastaba": v.pastaba || "" };
     });
     if (vacRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(vacRows), "Atostogos");
     XLSX.writeFile(wb, "Ataskaita " + month + ".xlsx");
@@ -2001,7 +2047,7 @@
     return out.map(function (v) {
       var e = getEmp(v.darbuotojas_id);
       return '<div class="tv-line"><span class="tv-line-t">' + esc(e ? e.vardas : "?") + "</span>" +
-        '<span class="chip chip-blue">' + VAC_LABEL[v.tipas] + "</span>" +
+        '<span class="chip chip-blue">' + vacLabel(v.tipas) + "</span>" +
         '<span class="tv-line-w">iki ' + esc(fmtShort(v.iki)) + "</span></div>";
     }).join("");
   }
@@ -2464,6 +2510,22 @@
         if (em) empModal(em);
         break;
       }
+      case "settings":
+        settingsModal();
+        break;
+      case "set-add": {
+        var sg = el.getAttribute("data-grupe");
+        var sinp = document.querySelector('.set-input[data-grupe="' + sg + '"]');
+        var sval = sinp ? String(sinp.value || "").trim() : "";
+        if (!sval) break;
+        var ex = (S.sarasai || []).filter(function (x) { return x.grupe === sg; });
+        if (ex.some(function (x) { return String(x.reiksme).toLowerCase() === sval.toLowerCase(); })) { toast("Tokia reikšmė jau yra."); break; }
+        mutate(API.addListItem({ grupe: sg, reiksme: sval, tvarka: ex.length + 1 }), "Pridėta").then(function (ok) { if (ok) settingsModal(); });
+        break;
+      }
+      case "set-del":
+        mutate(API.deleteListItem(id), "Pašalinta").then(function (ok) { if (ok) settingsModal(); });
+        break;
       case "view-as":
         if (!(S.realMe && S.realMe.role === "admin")) break;
         S.viewAsId = id;

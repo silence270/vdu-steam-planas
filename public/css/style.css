@@ -688,6 +688,15 @@ input[type="range"]::-webkit-slider-thumb {
   .month-table .m-dot { width: 6px; height: 6px; }
   .month-table .m-vac, .month-table .m-tasks { font-size: 8px; line-height: 1.1; }
 }
+
+/* Nustatymai (valdomi sąrašai) */
+.set-group { margin-bottom: 16px; }
+.set-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+.set-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--fill); border-radius: 8px; padding: 4px 6px 4px 10px; font-size: 13px; }
+.set-x { border: none; background: transparent; cursor: pointer; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 2px; }
+.set-x:hover { color: var(--red); }
+.set-add { display: flex; gap: 6px; }
+.set-input { flex: 1; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 14px; }
 .tv-task .tv-shift-n { color: var(--amber); font-weight: 600; }
 /* TV — kad viskas tilptų: kompaktiškesni tarpai/žiedai */
 .tv-dash .tv-stat { padding: 12px 16px; }
