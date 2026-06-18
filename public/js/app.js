@@ -31,7 +31,6 @@
     viewChanged: true,
     realMe: null,
     viewAsId: null,
-    roleAs: null,
     availability: [],
     availTemplate: [],
     availEmpId: null,
@@ -253,11 +252,9 @@
     var v = fd.get("mokiniu_skaicius");
     return (v === "" || v == null) ? null : Number(v);
   }
-  function isAdmin() { return S.roleAs === "darbuotojas" ? false : !!(S.me && S.me.role === "admin"); }
+  function isAdmin() { return !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
-  function isManager() { return S.roleAs === "darbuotojas" ? false : !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
-  // Ar tikroji rolė leidžia perjungti peržiūrą (admin/vadovas).
-  function canSwitchRole() { return !!(S.realMe && (S.realMe.role === "admin" || S.realMe.role === "vadovas")); }
+  function isManager() { return !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
   // Ar dabar admino „žiūrėti kaip narys" peržiūra (tada rašyti draudžiama).
   function viewingAs() { return !!(S.realMe && S.viewAsId && S.me && S.me.id !== S.realMe.id); }
   // Ar dabartinis vartotojas kuruoja darbuotoją empId (gali valdyti jo darbus/grafiką)?
@@ -543,7 +540,7 @@
           "</div>" +
         "</div>" +
       "</header>" +
-      '<main class="main' + (S.viewChanged ? " view-enter" : "") + '">' + migrationBannerHtml() + viewAsBanner() + roleAsBanner() + content + "</main>" +
+      '<main class="main' + (S.viewChanged ? " view-enter" : "") + '">' + migrationBannerHtml() + viewAsBanner() + content + "</main>" +
       '<nav class="bottom-nav">' + bottomBtns + "</nav>";
   }
 
@@ -563,32 +560,20 @@
     "</div>";
   }
 
-  function roleAsBanner() {
-    if (S.roleAs !== "darbuotojas") return "";
-    return '<div class="card" style="border-color:var(--blue);background:rgba(0,113,227,.08);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
-      '<div><b>👤 Peržiūra: darbuotojas</b> <span class="hint">— matote, kaip programėlę mato eilinis darbuotojas</span></div>' +
-      '<button class="btn-outline btn-sm" data-action="role-back">Grįžti į administratorių</button>' +
-    "</div>";
-  }
-
   function userMenuModal() {
     var role = S.realMe ? S.realMe.role : "";
     var roleLabel = role === "admin" ? "Administratorius" : role === "vadovas" ? "Vadovas" : "Darbuotojas";
-    var isEmp = S.roleAs === "darbuotojas";
-    var html = "<h2>" + esc(S.realMe ? S.realMe.vardas : "Profilis") + "</h2>" +
-      '<div class="hint" style="margin-bottom:14px">Tikroji rolė: <b>' + esc(roleLabel) + "</b></div>";
-    if (canSwitchRole()) {
-      html += '<div class="hint" style="margin-bottom:8px">Peržiūrėti programėlę kaip:</div>' +
-        '<div class="role-opts">' +
-          '<button type="button" class="role-opt' + (!isEmp ? " active" : "") + '" data-action="role-set" data-role="real"><b>' + esc(roleLabel) + "</b><span>Pilnas valdymas</span></button>" +
-          '<button type="button" class="role-opt' + (isEmp ? " active" : "") + '" data-action="role-set" data-role="darbuotojas"><b>Darbuotojas</b><span>Kaip mato eilinis darbuotojas</span></button>' +
-        "</div>";
-    }
-    html += '<div class="modal-actions">' +
-      '<button type="button" class="btn-outline left" data-action="logout">Atsijungti</button>' +
-      '<button type="button" class="btn" data-action="close-modal">Uždaryti</button>' +
-    "</div>";
-    openModal(html);
+    openModal(
+      "<h2>" + esc(S.realMe ? S.realMe.vardas : "Profilis") + "</h2>" +
+      '<div class="hint" style="margin-bottom:14px">Rolė: <b>' + esc(roleLabel) + "</b></div>" +
+      '<div class="role-opts">' +
+        '<button type="button" class="role-opt" data-action="go-mano"><b>Mano darbai</b><span>Tik tavo darbai, krūvis ir tvarkaraštis</span></button>' +
+      "</div>" +
+      '<div class="modal-actions">' +
+        '<button type="button" class="btn-outline left" data-action="logout">Atsijungti</button>' +
+        '<button type="button" class="btn" data-action="close-modal">Uždaryti</button>' +
+      "</div>"
+    );
   }
 
   function migrationBannerHtml() {
@@ -804,6 +789,40 @@
         '<div class="hint" style="margin-bottom:4px">Įsidiekite sistemą į telefoną — atsidarys per visą ekraną, be naršyklės.</div>' +
         installBtnHtml() + "</div>";
     }
+    return html;
+  }
+
+  function viewMano() {
+    var me = S.realMe || S.me;
+    if (!me) return '<div class="card"><div class="empty">—</div></div>';
+    var today = todayIso();
+    var mine = S.tasks.filter(function (t) { return t.darbuotojas_id === me.id && t.statusas !== "atlikta"; })
+      .sort(function (a, b) { var ta = a.terminas || "9999-99-99", tb = b.terminas || "9999-99-99"; return ta < tb ? -1 : ta > tb ? 1 : 0; });
+    var lateMine = mine.filter(isLate).length;
+    var l = loadOf(me.id);
+    var myShifts = S.shifts.filter(function (s) { return s.darbuotojas_id === me.id && s.data >= today; })
+      .sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : (a.nuo < b.nuo ? -1 : 1); }).slice(0, 8);
+
+    var html = '<div class="view-title"><div><h1>Mano darbai</h1><div class="view-sub">' + esc(me.vardas) + "</div></div></div>";
+    html += '<div class="metrics">' +
+      '<div class="metric"><div class="label">Mano aktyvūs</div><div class="value">' + mine.length + "</div></div>" +
+      '<div class="metric"><div class="label">Mano valandos</div><div class="value">' + l.hours + '</div><div class="sub">iš ' + l.cap + " val./sav.</div></div>" +
+      '<div class="metric"><div class="label">Krūvis</div><div class="value">' + l.pct + "%</div></div>" +
+      '<div class="metric' + (lateMine ? " alert" : "") + '"><div class="label">Vėluoja</div><div class="value">' + lateMine + "</div></div>" +
+    "</div>";
+    html += '<div class="card"><h2>Aktyvūs darbai</h2>';
+    html += mine.length ? mine.map(taskRowHtml).join("") : '<div class="empty">Aktyvių darbų neturite.</div>';
+    html += "</div>";
+    html += '<div class="card"><h2>Artimiausias tvarkaraštis</h2>';
+    if (myShifts.length) {
+      html += myShifts.map(function (s) {
+        return '<div class="task-row" data-action="open-shift" data-id="' + s.id + '" style="cursor:pointer"><div class="t-main"><div class="t-title">' + esc(fmtShort(s.data)) + " · " + esc(s.nuo) + "–" + esc(s.iki) + "</div>" +
+          '<div class="t-meta">' + (s.tipas ? '<span class="chip chip-primary">' + esc(s.tipas) + "</span>" : "") + (s.vieta ? "<span>" + esc(s.vieta) + "</span>" : "") + (s.pastaba ? "<span>" + esc(s.pastaba) + "</span>" : "") + "</div></div></div>";
+      }).join("");
+    } else {
+      html += '<div class="empty">Artimiausių įrašų nėra.</div>';
+    }
+    html += "</div>";
     return html;
   }
 
@@ -2449,6 +2468,7 @@
       else if (S.view === "prieinamumas") content = viewPrieinamumas();
       else if (S.view === "komanda") content = viewKomanda();
       else if (S.view === "nustatymai") content = viewNustatymai();
+      else if (S.view === "mano") content = viewMano();
       html = shellHtml(content);
     }
     root.innerHTML = html;
@@ -2833,19 +2853,9 @@
       case "user-menu":
         userMenuModal();
         break;
-      case "role-set": {
-        if (!canSwitchRole()) { closeModal(); break; }
-        S.roleAs = (el.getAttribute("data-role") === "darbuotojas") ? "darbuotojas" : null;
-        S.viewAsId = null;
-        if (!isAdmin() && S.view === "nustatymai") S.view = "apzvalga";
+      case "go-mano":
         closeModal();
-        S.viewChanged = true;
-        render();
-        window.scrollTo(0, 0);
-        break;
-      }
-      case "role-back":
-        S.roleAs = null;
+        S.view = "mano";
         S.viewChanged = true;
         render();
         window.scrollTo(0, 0);
