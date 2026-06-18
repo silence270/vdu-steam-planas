@@ -782,3 +782,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .btn-done { display: inline-flex; align-items: center; gap: 4px; background: var(--green-soft); color: var(--green); border: none; border-radius: 980px; font-weight: 590; padding: 6px 13px; font-size: 13px; cursor: pointer; white-space: nowrap; transition: filter .15s ease, transform .12s ease; }
 .btn-done:hover { filter: brightness(0.96); }
 .btn-done:active { transform: scale(0.97); }
+.btn-task { background: linear-gradient(135deg, #F2A33C 0%, #E0822A 100%); box-shadow: 0 8px 22px -6px rgba(224, 130, 42, 0.45); }

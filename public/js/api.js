@@ -15,7 +15,7 @@ window.API = (function () {
   // Ar duomenų bazėje jau yra naujesni stulpeliai/lentelės (atnaujinimas-1.sql).
   // Optimistiškai true; fetchAll patikslina. Jei dar ne — appsas nemeta klaidų,
   // tik tų funkcijų neleidžia, kol adminas paleidžia atnaujinimą.
-  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true, lists: true, mokykla: true };
+  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true, lists: true, mokykla: true, kabinetas: true };
 
   var DEMO_KEY = "steamPlanas.demo.v1";
   var DEMO_USER_KEY = "steamPlanas.demoUser";
@@ -315,6 +315,8 @@ window.API = (function () {
         sb.from("tvarkarastis").select("mokykla").limit(1)
       ]);
       caps.mokykla = !mkProbe[0].error && !mkProbe[1].error;
+      var kabProbe = await sb.from("uzduotys").select("kabinetas").limit(1);
+      caps.kabinetas = !kabProbe.error;
       function trimT(rows) {
         return (rows || []).map(function (r) {
           if (r.nuo != null) r.nuo = String(r.nuo).slice(0, 5);
@@ -336,7 +338,7 @@ window.API = (function () {
         availTemplate: trimT(avail[0].data),
         availability: trimT(avail[1].data),
         sarasai: listsRes.data || [],
-        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime || !caps.lists || !caps.mokykla
+        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime || !caps.lists || !caps.mokykla || !caps.kabinetas
       };
     }
     caps.taskExtras = true;
@@ -358,6 +360,7 @@ window.API = (function () {
     if (!caps.taskExtras) drop = { atlikta_at: 1, kategorija: 1 };
     if (!caps.taskTime) { drop = drop || {}; drop.terminas_laikas = 1; }
     if (!caps.mokykla) { drop = drop || {}; drop.mokykla = 1; drop.mokiniu_skaicius = 1; }
+    if (!caps.kabinetas) { drop = drop || {}; drop.kabinetas = 1; }
     if (!drop) return obj;
     var copy = {};
     for (var k in obj) {

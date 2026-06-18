@@ -257,6 +257,14 @@
     var v = fd.get("mokiniu_skaicius");
     return (v === "" || v == null) ? null : Number(v);
   }
+  function vietaDatalist() {
+    return '<datalist id="vietos-list">' +
+      listValues("vieta").map(function (v) { return '<option value="' + esc(v) + '">'; }).join("") +
+      "</datalist>";
+  }
+  function kabinetasRow(val) {
+    return '<div class="form-row"><label>Kabinetas / vieta</label><input type="text" name="kabinetas" list="vietos-list" maxlength="80" value="' + esc(val || "") + '" placeholder="pasirink arba įrašyk…"></div>';
+  }
   function isAdmin() { return S.roleAs === "darbuotojas" ? false : !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
   function isManager() { return S.roleAs === "darbuotojas" ? false : !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
@@ -598,7 +606,7 @@
   function migrationBannerHtml() {
     if (!S.migrationNeeded || !isAdmin()) return "";
     return '<div class="card" style="border-color:#F2A33C;margin-bottom:14px"><b>Reikia duomenų bazės atnaujinimo.</b>' +
-      '<div class="hint">Naujoms funkcijoms Supabase SQL Editor lange paleiskite naujausius failus iš aplanko <b>supabase/</b> (<b>atnaujinimas-1.sql</b> … <b>atnaujinimas-8.sql</b>) eilės tvarka. Iki tol kai kurios funkcijos (rolės, kuratoriai, prieinamumas, darbų laikas, pranešimai, mokykla/mokiniai) veikia ribotai.</div></div>';
+      '<div class="hint">Naujoms funkcijoms Supabase SQL Editor lange paleiskite naujausius failus iš aplanko <b>supabase/</b> (<b>atnaujinimas-1.sql</b> … <b>atnaujinimas-9.sql</b>) eilės tvarka. Iki tol kai kurios funkcijos (rolės, kuratoriai, prieinamumas, darbų laikas, pranešimai, mokykla/mokiniai, kabinetas) veikia ribotai.</div></div>';
   }
 
   function notifsModal() {
@@ -782,7 +790,7 @@
     var mine = S.me ? S.tasks.filter(function (t) { return t.darbuotojas_id === S.me.id && t.statusas !== "atlikta"; }) : [];
     var html = '<div class="view-title"><div><h1>' + esc(greetingText()) + '</h1><div class="view-sub">' + todayLongLabel() + "</div></div><div class=\"actions\">" +
       (isManager() ? '<button class="btn-outline desktop-only" data-action="tv-on">TV režimas</button>' : "") +
-      (isAdmin() ? '<button class="btn" data-action="new-task">+ Naujas darbas</button>' : "") +
+      (isAdmin() ? '<button class="btn btn-task" data-action="new-task">+ Naujas darbas</button>' : "") +
       "</div></div>";
     html += metricsHtml();
     if (isManager()) {
@@ -838,6 +846,7 @@
           dueBadge(t) +
           '<span class="chip ' + PRIO_CHIP[t.prioritetas] + '">' + PRIO[t.prioritetas] + "</span>" +
           katBadge(t) +
+          (t.kabinetas ? '<span class="chip chip-gray">' + esc(t.kabinetas) + "</span>" : "") +
           komBadge(t) +
         "</div>" +
       "</div>" +
@@ -948,6 +957,7 @@
 
     var html = '<div class="view-title"><h1>Tvarkaraštis</h1><div class="actions">' +
       (isAdmin() && S.schedMode === "week" ? '<button class="btn-outline" data-action="copy-week">Kopijuoti praėjusią savaitę</button>' : "") +
+      (isAdmin() ? '<button class="btn btn-task" data-action="new-task">+ Naujas darbas</button>' : "") +
       '<button class="btn" data-action="new-shift">+ Naujas įrašas</button>' +
     "</div></div>";
 
@@ -1443,7 +1453,7 @@
     var canEditTaskModal = !viewingAs() && (isNew || canEditTask(task));
     var t = task || {
       pavadinimas: "", aprasymas: "", valandos: defNum("valandos", 4), terminas: "",
-      prioritetas: "vidutinis", statusas: "laukia", kategorija: "",
+      prioritetas: "vidutinis", statusas: "laukia", kategorija: "", kabinetas: "",
       darbuotojas_id: opts.pool ? null : (isAdmin() ? null : (S.me ? S.me.id : null))
     };
     var ov = openModal(
@@ -1466,7 +1476,8 @@
           "</select></div>" +
           mokyklaRow(t.mokykla) +
           mokiniaiRow(t.mokiniu_skaicius) +
-        "</div>" + mokDatalist() +
+          kabinetasRow(t.kabinetas) +
+        "</div>" + mokDatalist() + vietaDatalist() +
         '<div class="form-row"><label>Aprašymas</label><textarea name="aprasymas">' + esc(t.aprasymas || "") + "</textarea></div>" +
         (isNew ? '<div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="pranesti_visiems" style="width:auto"> Pranešti visiems (visa komanda gaus pranešimą)</label></div>' : "") +
         '<div class="form-error" id="task-err"></div>' +
@@ -1495,6 +1506,7 @@
         kategorija: fd.get("kategorija") || "",
         mokykla: String(fd.get("mokykla") || "").trim(),
         mokiniu_skaicius: readMokiniai(fd),
+        kabinetas: String(fd.get("kabinetas") || "").trim(),
         aprasymas: String(fd.get("aprasymas") || "").trim()
       };
       if (!obj.pavadinimas) return;
