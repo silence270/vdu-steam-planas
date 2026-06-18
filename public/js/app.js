@@ -265,6 +265,16 @@
   function kabinetasRow(val) {
     return '<div class="form-row"><label>Kabinetas / vieta</label><input type="text" name="kabinetas" list="vietos-list" maxlength="80" value="' + esc(val || "") + '" placeholder="pasirink arba įrašyk…"></div>';
   }
+  // Naujam darbui — pažymimas vienas ar keli darbuotojai (kiekvienam sukuriama kopija).
+  function assigneePickerHtml() {
+    var emps = activeEmployees();
+    return '<div class="assignee-pick">' +
+      '<label class="ap-row ap-all"><input type="checkbox" id="assignee-all"> <b>Visi darbuotojai</b></label>' +
+      emps.map(function (e) {
+        return '<label class="ap-row"><input type="checkbox" class="assignee-cb" value="' + e.id + '"> ' + esc(e.vardas) + "</label>";
+      }).join("") +
+    "</div>";
+  }
   function isAdmin() { return S.roleAs === "darbuotojas" ? false : !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
   function isManager() { return S.roleAs === "darbuotojas" ? false : !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
@@ -1460,7 +1470,11 @@
       "<h2>" + (isNew ? (opts.pool ? "Nauja bendra veikla" : "Naujas darbas") : "Darbo redagavimas") + "</h2>" +
       '<form id="task-form">' +
         '<div class="form-row"><label>Pavadinimas *</label><input type="text" name="pavadinimas" required maxlength="200" value="' + esc(t.pavadinimas) + '"></div>' +
-        '<div class="form-row"><label>Kam priskirta</label><select name="darbuotojas_id">' + empSelectOptions(t.darbuotojas_id, isAdmin(), isAdmin() && isNew) + "</select></div>" +
+        '<div class="form-row"><label>Kam priskirta</label>' +
+          (isNew
+            ? assigneePickerHtml() + '<div class="hint" style="margin-top:5px">Pažymėk vieną ar kelis. Nepažymėjus — bendra (nepriskirta) veikla.</div>'
+            : '<select name="darbuotojas_id">' + empSelectOptions(t.darbuotojas_id, isAdmin(), false) + "</select>") +
+        "</div>" +
         '<div class="form-grid">' +
           '<div class="form-row"><label>Valandos</label><input type="number" name="valandos" min="0" step="0.5" value="' + esc(t.valandos) + '"></div>' +
           '<div class="form-row"><label>Terminas</label>' + datePickerHtml("terminas", t.terminas || "") + "</div>" +
@@ -1516,36 +1530,45 @@
       } else {
         obj.atlikta_at = null;
       }
-      // Priskyrimas visai komandai — po kopiją kiekvienam darbuotojui
-      if (isNew && obj.darbuotojas_id === "__ALL__") {
-        var emps = activeEmployees();
-        if (!emps.length) { closeModal(); return; }
-        var base = Object.assign({}, obj); delete base.darbuotojas_id;
-        try {
-          for (var i = 0; i < emps.length; i++) {
-            await API.addTask(Object.assign({}, base, { darbuotojas_id: emps[i].id }));
-            if (notifyAll) notifyUser(emps[i].id, "Jums priskirta veikla: „" + obj.pavadinimas + "“", "darbai");
+      // Naujas darbas — gali būti priskirtas vienam ar keliems (po kopiją kiekvienam)
+      if (isNew) {
+        var ids = Array.prototype.slice.call(ev.target.querySelectorAll(".assignee-cb:checked")).map(function (c) { return c.value; });
+        if (ids.length <= 1) {
+          obj.darbuotojas_id = ids[0] || null;
+          if (await mutate(API.addTask(obj), "Darbas išsaugotas")) {
+            if (obj.darbuotojas_id) notifyUser(obj.darbuotojas_id, "Jums priskirtas darbas: „" + obj.pavadinimas + "“", "darbai");
+            if (notifyAll) notifyEveryone("Nauja veikla: „" + obj.pavadinimas + "“" + (obj.terminas ? " (iki " + obj.terminas + ")" : ""), "darbai", obj.darbuotojas_id);
+            closeModal();
           }
-          toast("Priskirta visai komandai (" + emps.length + ")");
-          closeModal();
-          await refreshData();
-        } catch (e) {
-          toast(e.message || "Nepavyko");
-          await refreshData();
+        } else {
+          var base = Object.assign({}, obj); delete base.darbuotojas_id;
+          try {
+            for (var i = 0; i < ids.length; i++) {
+              await API.addTask(Object.assign({}, base, { darbuotojas_id: ids[i] }));
+              notifyUser(ids[i], "Jums priskirtas darbas: „" + obj.pavadinimas + "“", "darbai");
+            }
+            toast("Priskirta " + ids.length + " žmonėms");
+            closeModal();
+            await refreshData();
+          } catch (e) {
+            toast(e.message || "Nepavyko");
+            await refreshData();
+          }
         }
         return;
       }
-      var ok = isNew
-        ? await mutate(API.addTask(obj), "Darbas išsaugotas")
-        : await mutate(API.updateTask(task.id, obj), "Pakeitimai išsaugoti");
+      // Redagavimas — vienas darbuotojas
+      var ok = await mutate(API.updateTask(task.id, obj), "Pakeitimai išsaugoti");
       if (ok) {
-        var prevAssignee = isNew ? null : task.darbuotojas_id;
-        if (obj.darbuotojas_id && obj.darbuotojas_id !== prevAssignee) {
+        if (obj.darbuotojas_id && obj.darbuotojas_id !== task.darbuotojas_id) {
           notifyUser(obj.darbuotojas_id, "Jums priskirtas darbas: „" + obj.pavadinimas + "“", "darbai");
         }
-        if (notifyAll) notifyEveryone("Nauja veikla: „" + obj.pavadinimas + "“" + (obj.terminas ? " (iki " + obj.terminas + ")" : ""), "darbai", obj.darbuotojas_id);
         closeModal();
       }
+    });
+    var allCb = ov.querySelector("#assignee-all");
+    if (allCb) allCb.addEventListener("change", function () {
+      ov.querySelectorAll(".assignee-cb").forEach(function (c) { c.checked = allCb.checked; });
     });
     var del = ov.querySelector("#task-del");
     if (del) del.addEventListener("click", async function () {
