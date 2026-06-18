@@ -111,7 +111,7 @@
     "new-shift": 1, "open-shift": 1, "new-emp": 1, "open-emp": 1, "open-vacations": 1, "del-vacation": 1,
     "import": 1, "avail-add": 1, "avail-negaliu": 1, "avail-reset": 1, "avail-del": 1,
     "avail-tmpl-negaliu": 1, "avail-tmpl-reset": 1,
-    "mlist-done": 1, "mlist-del": 1, "mlist-new": 1
+    "mlist-done": 1, "mlist-del": 1, "mlist-new": 1, "task-done": 1
   };
 
   // ---------- programėlės diegimas ----------
@@ -225,6 +225,10 @@
   }
   function activeEmployees() {
     return S.employees.filter(function (e) { return e.aktyvus; });
+  }
+  // Kieno tvarkaraštį vartotojas gali MATYTI: vadovai/admin — visus; kiti — tik save (ir kuruojamus).
+  function visibleEmps() {
+    return isManager() ? activeEmployees() : activeEmployees().filter(function (e) { return canManageEmp(e.id); });
   }
   // Valdomo sąrašo reikšmės (iš DB, arba numatytosios jei dar tuščia/be migracijos).
   function listValues(grupe) {
@@ -856,7 +860,9 @@
           komBadge(t) +
         "</div>" +
       "</div>" +
-      '<div class="t-actions">' + statusCtl +
+      '<div class="t-actions">' +
+        (editable && t.statusas !== "atlikta" ? '<button class="btn-done btn-sm" data-action="task-done" data-id="' + t.id + '" title="Pažymėti atlikta">✓ Atlikta</button>' : "") +
+        statusCtl +
         (editable ? '<button class="btn-ghost btn-sm" data-action="open-task" data-id="' + t.id + '">Keisti</button>' : "") +
       "</div>" +
     "</div>";
@@ -957,7 +963,7 @@
     var days = [];
     for (var i = 0; i < 7; i++) days.push(addDays(mon, i));
     var today = todayIso();
-    var emps = activeEmployees();
+    var emps = visibleEmps();
 
     var html = '<div class="view-title"><h1>Tvarkaraštis</h1><div class="actions">' +
       (isAdmin() && S.schedMode === "week" ? '<button class="btn-outline" data-action="copy-week">Kopijuoti praėjusią savaitę</button>' : "") +
@@ -1025,7 +1031,9 @@
         '<span class="d">' + DAYS_SHORT[idx] + '</span><span class="n">' + d.getDate() + "</span></button>";
     }).join("");
     var selIso = isoFromDate(days[S.selDay]);
-    var dayShifts = S.shifts.filter(function (s) { return s.data === selIso; })
+    var visSet = {};
+    emps.forEach(function (e) { visSet[e.id] = true; });
+    var dayShifts = S.shifts.filter(function (s) { return s.data === selIso && visSet[s.darbuotojas_id]; })
       .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
     var dayList = dayShifts.length ? dayShifts.map(function (s) {
       var e = getEmp(s.darbuotojas_id);
@@ -1080,7 +1088,7 @@
     d.setDate(first.getDate() - (first.getDay() + 6) % 7);
     var today = todayIso();
     var month = first.getMonth();
-    var emps = activeEmployees();
+    var emps = visibleEmps();
     var rows = "";
     for (var w = 0; w < 6; w++) {
       var cells = "";
@@ -1311,8 +1319,8 @@
     var ov = openModal(
       "<h2>Pridėti laiką</h2>" +
       '<form id="avail-form"><div class="form-grid">' +
-        '<div class="form-row"><label>Nuo</label><input type="time" name="nuo" required value="09:00"></div>' +
-        '<div class="form-row"><label>Iki</label><input type="time" name="iki" required value="12:00"></div>' +
+        '<div class="form-row"><label>Nuo</label><input type="time" name="nuo" required min="07:00" max="19:00" value="09:00"></div>' +
+        '<div class="form-row"><label>Iki</label><input type="time" name="iki" required min="07:00" max="19:00" value="12:00"></div>' +
       "</div>" +
       '<div class="form-error" id="avail-err"></div>' +
       '<div class="modal-actions"><button type="button" class="btn-outline" data-action="close-modal">Atšaukti</button>' +
@@ -1434,7 +1442,7 @@
     var opts = includeNone ? '<option value="">— Nepriskirta (bendra veikla) —</option>' : "";
     if (includeAll) opts += '<option value="__ALL__"' + (selectedId === "__ALL__" ? " selected" : "") + ">— Visi darbuotojai (kiekvienam po kopiją) —</option>";
     var list;
-    if (isAdmin()) {
+    if (isManager()) {
       list = activeEmployees();
     } else if (S.me) {
       // pats + kuruojami darbuotojai
@@ -1465,7 +1473,7 @@
         '<div class="form-grid">' +
           '<div class="form-row"><label>Valandos</label><input type="number" name="valandos" min="0" step="0.5" value="' + esc(t.valandos) + '"></div>' +
           '<div class="form-row"><label>Terminas</label>' + datePickerHtml("terminas", t.terminas || "") + "</div>" +
-          '<div class="form-row"><label>Laikas (nebūtina)</label><input type="time" name="terminas_laikas" value="' + esc(t.terminas_laikas ? String(t.terminas_laikas).slice(0, 5) : "") + '"></div>' +
+          '<div class="form-row"><label>Laikas (nebūtina)</label><input type="time" name="terminas_laikas" min="07:00" max="19:00" value="' + esc(t.terminas_laikas ? String(t.terminas_laikas).slice(0, 5) : "") + '"></div>' +
           '<div class="form-row"><label>Prioritetas</label><select name="prioritetas">' +
             Object.keys(PRIO).map(function (k) { return '<option value="' + k + '"' + (t.prioritetas === k ? " selected" : "") + ">" + PRIO[k] + "</option>"; }).join("") +
           "</select></div>" +
@@ -1742,8 +1750,8 @@
         "</select></div>" +
         '<div class="form-row"><label>Data *</label>' + datePickerHtml("data", s.data || todayIso()) + "</div>" +
         '<div class="form-grid">' +
-          '<div class="form-row"><label>Nuo</label><input type="time" name="nuo" required value="' + esc(s.nuo) + '"></div>' +
-          '<div class="form-row"><label>Iki</label><input type="time" name="iki" required value="' + esc(s.iki) + '"></div>' +
+          '<div class="form-row"><label>Nuo</label><input type="time" name="nuo" required min="07:00" max="19:00" value="' + esc(s.nuo) + '"></div>' +
+          '<div class="form-row"><label>Iki</label><input type="time" name="iki" required min="07:00" max="19:00" value="' + esc(s.iki) + '"></div>' +
         "</div>" +
         '<div class="form-grid">' +
           '<div class="form-row"><label>Veiklos tipas</label><select name="tipas"><option value="">—</option>' + listValues("veiklos_tipas").map(function (x) { return '<option value="' + esc(x) + '"' + (s.tipas === x ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("") + "</select></div>" +
@@ -1778,8 +1786,16 @@
         ov.querySelector("#shift-err").textContent = "Pasirinkite darbuotoją.";
         return;
       }
+      if (!canManageEmp(obj.darbuotojas_id)) {
+        ov.querySelector("#shift-err").textContent = "Neturite teisės keisti šio darbuotojo tvarkaraščio.";
+        return;
+      }
       if (obj.iki <= obj.nuo) {
         ov.querySelector("#shift-err").textContent = "Pabaigos laikas turi būti vėlesnis už pradžios.";
+        return;
+      }
+      if (obj.nuo < "07:00" || obj.iki > "19:00") {
+        ov.querySelector("#shift-err").textContent = "Laikas leidžiamas tik 07:00–19:00.";
         return;
       }
       var ok = isNew
@@ -2601,6 +2617,12 @@
       case "open-task": {
         var t = S.tasks.find(function (x) { return x.id === id; });
         if (t) taskModal(t, {});
+        break;
+      }
+      case "task-done": {
+        var tdone = S.tasks.find(function (x) { return x.id === id; });
+        if (tdone && !canEditTask(tdone)) break;
+        mutate(API.updateTask(id, { statusas: "atlikta", atlikta_at: new Date().toISOString() }), "Atlikta");
         break;
       }
       case "assign-task": {

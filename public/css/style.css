@@ -778,3 +778,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .role-opt b { font-weight: 600; }
 .role-opt span { font-size: 12.5px; color: var(--muted); }
 .role-opt.active span { color: var(--primary-dark); opacity: .8; }
+.btn-done { display: inline-flex; align-items: center; gap: 4px; background: var(--green-soft); color: var(--green); border: none; border-radius: 980px; font-weight: 590; padding: 6px 13px; font-size: 13px; cursor: pointer; white-space: nowrap; transition: filter .15s ease, transform .12s ease; }
+.btn-done:hover { filter: brightness(0.96); }
+.btn-done:active { transform: scale(0.97); }
