@@ -579,9 +579,14 @@
 
   function viewAsBanner() {
     if (!(S.realMe && S.realMe.role === "admin" && S.viewAsId && S.me && S.me.id !== S.realMe.id)) return "";
+    var opts = activeEmployees().filter(function (e) { return e.id !== S.realMe.id; })
+      .map(function (e) { return '<option value="' + e.id + '"' + (e.id === S.viewAsId ? " selected" : "") + ">" + esc(e.vardas) + "</option>"; }).join("");
     return '<div class="card" style="border-color:#7C3AED;background:rgba(124,58,237,.08);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
-      '<div><b>👁 Žiūrite kaip:</b> ' + esc(S.me.vardas) + ' <span class="hint">— administratoriaus peržiūra</span></div>' +
-      '<button class="btn-outline btn-sm" data-action="view-as-exit">Grįžti į savo vaizdą</button>' +
+      '<div><b>👤 Veikiate kaip:</b> ' + esc(S.me.vardas) + ' <span class="hint">— elgiatės kaip šis darbuotojas</span></div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<select data-change="switch-view-as" class="status-select" title="Perjungti darbuotoją">' + opts + "</select>" +
+        '<button class="btn-outline btn-sm" data-action="view-as-exit">Grįžti į savo</button>' +
+      "</div>" +
     "</div>";
   }
 
@@ -1460,7 +1465,7 @@
   function taskModal(task, opts) {
     opts = opts || {};
     var isNew = !task;
-    var canEditTaskModal = !viewingAs() && (isNew || canEditTask(task));
+    var canEditTaskModal = (isNew || canEditTask(task));
     var t = task || {
       pavadinimas: "", aprasymas: "", valandos: defNum("valandos", 4), terminas: "",
       prioritetas: "vidutinis", statusas: "laukia", kategorija: "", kabinetas: "",
@@ -1496,7 +1501,7 @@
         (isNew ? '<div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="pranesti_visiems" style="width:auto"> Pranešti visiems (visa komanda gaus pranešimą)</label></div>' : "") +
         '<div class="form-error" id="task-err"></div>' +
         '<div class="modal-actions">' +
-          (!isNew && canEditTask(task) && !viewingAs() ? '<button type="button" class="btn-ghost left" id="task-del" style="color:var(--red)">Ištrinti</button>' : "") +
+          (!isNew && canEditTask(task) ? '<button type="button" class="btn-ghost left" id="task-del" style="color:var(--red)">Ištrinti</button>' : "") +
           '<button type="button" class="btn-outline" data-action="close-modal">' + (canEditTaskModal ? "Atšaukti" : "Uždaryti") + "</button>" +
           (canEditTaskModal ? '<button type="submit" class="btn">Išsaugoti</button>' : '<span class="hint" style="align-self:center;margin-left:auto">Tik peržiūra</span>') +
         "</div>" +
@@ -1578,7 +1583,6 @@
     var komSend = ov.querySelector("#kom-send");
     if (komSend) {
       var sendComment = async function () {
-        if (viewingAs()) { toast("Peržiūros režimas — komentuoti negalima."); return; }
         var inp = ov.querySelector("#kom-input");
         var txt = String(inp.value || "").trim();
         if (!txt || !S.me) return;
@@ -2606,11 +2610,6 @@
     var action = el.getAttribute("data-action");
     var id = el.getAttribute("data-id");
 
-    if (viewingAs() && WRITE_ACTIONS[action]) {
-      toast("Peržiūros režimas — redaguoti negalima. Grįžkite į savo vaizdą.");
-      return;
-    }
-
     switch (action) {
       case "nav":
         var nv = el.getAttribute("data-view");
@@ -2902,12 +2901,15 @@
       case "view-as":
         if (!(S.realMe && S.realMe.role === "admin")) break;
         S.viewAsId = id;
+        S.roleAs = null;
+        resolveMe();
         S.view = "apzvalga";
         render();
         window.scrollTo(0, 0);
         break;
       case "view-as-exit":
         S.viewAsId = null;
+        resolveMe();
         S.view = "apzvalga";
         render();
         window.scrollTo(0, 0);
@@ -3039,7 +3041,6 @@
     if (!el) return;
     var what = el.getAttribute("data-change");
     if (what === "task-status") {
-      if (viewingAs()) { toast("Peržiūros režimas — redaguoti negalima."); render(); return; }
       var id = el.getAttribute("data-id");
       var t = S.tasks.find(function (x) { return x.id === id; });
       var patch = { statusas: el.value };
@@ -3067,6 +3068,13 @@
         var erow = (S.sarasai || []).find(function (x) { return x.grupe === "ne_veluoja" && x.reiksme === ekat; });
         if (erow) mutate(API.deleteListItem(erow.id), "Žymėjimas nuimtas");
       }
+    } else if (what === "switch-view-as") {
+      if (!(S.realMe && S.realMe.role === "admin")) { render(); return; }
+      S.viewAsId = el.value;
+      resolveMe();
+      S.view = "apzvalga";
+      render();
+      window.scrollTo(0, 0);
     }
   });
 
