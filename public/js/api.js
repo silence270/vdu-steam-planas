@@ -15,7 +15,7 @@ window.API = (function () {
   // Ar duomenų bazėje jau yra naujesni stulpeliai/lentelės (atnaujinimas-1.sql).
   // Optimistiškai true; fetchAll patikslina. Jei dar ne — appsas nemeta klaidų,
   // tik tų funkcijų neleidžia, kol adminas paleidžia atnaujinimą.
-  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true, lists: true };
+  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true, lists: true, mokykla: true };
 
   var DEMO_KEY = "steamPlanas.demo.v1";
   var DEMO_USER_KEY = "steamPlanas.demoUser";
@@ -309,6 +309,12 @@ window.API = (function () {
       caps.availability = !avail[0].error && !avail[1].error;
       var listsRes = await sb.from("app_sarasai").select("*").order("tvarka");
       caps.lists = !listsRes.error;
+      // Mokykla + mokinių skaičius (atnaujinimas-8) — abiejose lentelėse.
+      var mkProbe = await Promise.all([
+        sb.from("uzduotys").select("mokykla").limit(1),
+        sb.from("tvarkarastis").select("mokykla").limit(1)
+      ]);
+      caps.mokykla = !mkProbe[0].error && !mkProbe[1].error;
       function trimT(rows) {
         return (rows || []).map(function (r) {
           if (r.nuo != null) r.nuo = String(r.nuo).slice(0, 5);
@@ -330,7 +336,7 @@ window.API = (function () {
         availTemplate: trimT(avail[0].data),
         availability: trimT(avail[1].data),
         sarasai: listsRes.data || [],
-        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime || !caps.lists
+        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime || !caps.lists || !caps.mokykla
       };
     }
     caps.taskExtras = true;
@@ -351,6 +357,7 @@ window.API = (function () {
     var drop = null;
     if (!caps.taskExtras) drop = { atlikta_at: 1, kategorija: 1 };
     if (!caps.taskTime) { drop = drop || {}; drop.terminas_laikas = 1; }
+    if (!caps.mokykla) { drop = drop || {}; drop.mokykla = 1; drop.mokiniu_skaicius = 1; }
     if (!drop) return obj;
     var copy = {};
     for (var k in obj) {
@@ -367,14 +374,19 @@ window.API = (function () {
     }
     return obj;
   }
-  // Pašalina tvarkaraščio tipas/vieta, jei DB stulpelių dar nėra (atnaujinimas-6 nepaleistas).
+  // Pašalina tvarkaraščio laukus, kurių DB dar neturi:
+  // tipas/vieta (atnaujinimas-6) ir mokykla/mokinių skaičius (atnaujinimas-8).
   function stripShift(obj) {
-    if (mode === "supabase" && !caps.lists && obj && (obj.hasOwnProperty("tipas") || obj.hasOwnProperty("vieta"))) {
-      var copy = {};
-      for (var k in obj) { if (obj.hasOwnProperty(k) && k !== "tipas" && k !== "vieta") copy[k] = obj[k]; }
-      return copy;
-    }
-    return obj;
+    if (mode !== "supabase" || !obj) return obj;
+    var drop = {};
+    if (!caps.lists) { drop.tipas = 1; drop.vieta = 1; }
+    if (!caps.mokykla) { drop.mokykla = 1; drop.mokiniu_skaicius = 1; }
+    var has = false;
+    for (var d in drop) { if (drop[d]) { has = true; break; } }
+    if (!has) return obj;
+    var copy = {};
+    for (var k in obj) { if (obj.hasOwnProperty(k) && !drop[k]) copy[k] = obj[k]; }
+    return copy;
   }
   function needExtraTables() {
     if (mode === "supabase" && !caps.extraTables) {
@@ -503,6 +515,14 @@ window.API = (function () {
         d.pranesimai.unshift(n);
       });
     });
+  }
+
+  async function savePushSubscription(s) {
+    if (mode !== "supabase") return; // demo režime push nėra
+    var res = await sb.rpc("save_push_subscription", {
+      p_endpoint: s.endpoint, p_p256dh: s.p256dh, p_auth: s.auth, p_ua: s.ua || ""
+    });
+    if (res.error) throw new Error(res.error.message || "Nepavyko išsaugoti prenumeratos");
   }
 
   async function markNotificationsRead(ids) {
@@ -706,6 +726,7 @@ window.API = (function () {
     deleteComment: deleteComment,
     addNotifications: addNotifications,
     markNotificationsRead: markNotificationsRead,
+    savePushSubscription: savePushSubscription,
     addVacation: addVacation,
     deleteVacation: deleteVacation,
     addAvailTemplate: addAvailTemplate,
@@ -716,7 +737,7 @@ window.API = (function () {
     clearAvailTemplateForWeekday: clearAvailTemplateForWeekday,
     addListItem: addListItem,
     deleteListItem: deleteListItem,
-    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability, curator: caps.curator, taskTime: caps.taskTime, lists: caps.lists }; },
+    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability, curator: caps.curator, taskTime: caps.taskTime, lists: caps.lists, mokykla: caps.mokykla }; },
     subscribe: subscribe
   };
 })();

@@ -83,9 +83,10 @@
     veiklos_tipas: ["Susirinkimas", "Veikla", "Mokymai", "Dirbtuvės"],
     kategorija: CATEGORIES,
     nedarbo_tipas: ["Atostogos", "Liga", "Kita"],
-    vieta: []
+    vieta: [],
+    mokykla: []
   };
-  var SARASAI_LABELS = { veiklos_tipas: "Veiklų tipai (tvarkaraščiui)", kategorija: "Darbų kategorijos", nedarbo_tipas: "Nedarbo tipai", vieta: "Patalpos / vietos" };
+  var SARASAI_LABELS = { veiklos_tipas: "Veiklų tipai (tvarkaraščiui)", kategorija: "Darbų kategorijos", nedarbo_tipas: "Nedarbo tipai", vieta: "Patalpos / vietos", mokykla: "Mokyklos" };
   var MONTHS_SHORT = ["saus.", "vas.", "kov.", "bal.", "geg.", "birž.", "liep.", "rugp.", "rugs.", "spal.", "lapkr.", "gruod."];
 
   var ICONS = {
@@ -233,6 +234,23 @@
     return fromDb.length ? fromDb : (LIST_DEFAULTS[grupe] || []);
   }
   function vacLabel(tipas) { return VAC_LABEL[tipas] || tipas || ""; }
+
+  // „Mokykla" laukas (pasirinkimas iš sąrašo arba laisvas tekstas) + „Mokinių skaičius".
+  function mokDatalist() {
+    return '<datalist id="mokyklos-list">' +
+      listValues("mokykla").map(function (m) { return '<option value="' + esc(m) + '">'; }).join("") +
+      "</datalist>";
+  }
+  function mokyklaRow(val) {
+    return '<div class="form-row"><label>Mokykla</label><input type="text" name="mokykla" list="mokyklos-list" maxlength="120" value="' + esc(val || "") + '" placeholder="pasirink arba įrašyk…"></div>';
+  }
+  function mokiniaiRow(val) {
+    return '<div class="form-row"><label>Mokinių skaičius</label><input type="number" name="mokiniu_skaicius" min="0" step="1" value="' + (val != null && val !== "" ? esc(val) : "") + '"></div>';
+  }
+  function readMokiniai(fd) {
+    var v = fd.get("mokiniu_skaicius");
+    return (v === "" || v == null) ? null : Number(v);
+  }
   function isAdmin() { return !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
   function isManager() { return !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
@@ -366,6 +384,45 @@
     if (list.length) API.addNotifications(list).catch(function () {});
   }
 
+  // ---------- Telefono push prenumerata ----------
+  function urlBase64ToUint8Array(base64String) {
+    var padding = "=".repeat((4 - base64String.length % 4) % 4);
+    var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var raw = atob(base64);
+    var arr = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  async function enablePush() {
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !window.Notification) {
+        alert("Šis įrenginys nepalaiko telefono pranešimų.\n\niPhone: pirma pridėk programėlę į pradžios ekraną (Safari → Bendrinti → „Įtraukti į pradžios ekraną“), atidaryk per tą piktogramą ir vėl spausk čia. Reikia iOS 16.4 ar naujesnės.");
+        return;
+      }
+      var perm = await Notification.requestPermission();
+      if (perm !== "granted") { toast("Pranešimai neleisti"); return; }
+      var reg = await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        var key = (window.APP_CONFIG && APP_CONFIG.VAPID_PUBLIC_KEY) || "";
+        if (!key) { toast("Trūksta VAPID rakto (config.js)"); return; }
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(key)
+        });
+      }
+      var j = sub.toJSON();
+      await API.savePushSubscription({
+        endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent
+      });
+      toast("Telefono pranešimai įjungti ✅");
+      if (typeof notifsModal === "function") notifsModal();
+    } catch (e) {
+      toast("Nepavyko įjungti: " + ((e && e.message) || e));
+    }
+  }
+
   function vacationOf(empId, dateIso) {
     for (var i = 0; i < S.vacations.length; i++) {
       var v = S.vacations[i];
@@ -492,7 +549,7 @@
   function migrationBannerHtml() {
     if (!S.migrationNeeded || !isAdmin()) return "";
     return '<div class="card" style="border-color:#F2A33C;margin-bottom:14px"><b>Reikia duomenų bazės atnaujinimo.</b>' +
-      '<div class="hint">Naujoms funkcijoms Supabase SQL Editor lange paleiskite naujausius failus iš aplanko <b>supabase/</b> (<b>atnaujinimas-1.sql</b> … <b>atnaujinimas-5.sql</b>) eilės tvarka. Iki tol kai kurios funkcijos (rolės, kuratoriai, prieinamumas, darbų laikas) veikia ribotai.</div></div>';
+      '<div class="hint">Naujoms funkcijoms Supabase SQL Editor lange paleiskite naujausius failus iš aplanko <b>supabase/</b> (<b>atnaujinimas-1.sql</b> … <b>atnaujinimas-8.sql</b>) eilės tvarka. Iki tol kai kurios funkcijos (rolės, kuratoriai, prieinamumas, darbų laikas, pranešimai, mokykla/mokiniai) veikia ribotai.</div></div>';
   }
 
   function notifsModal() {
@@ -504,8 +561,8 @@
       "</div>";
     }).join("") : '<div class="empty">Pranešimų nėra.</div>';
     var pushBtn = "";
-    if (window.Notification && Notification.permission === "default") {
-      pushBtn = '<button type="button" class="btn-outline btn-sm" data-action="enable-push">Rodyti pranešimus ir įrenginio ekrane</button>';
+    if ("serviceWorker" in navigator && "PushManager" in window && window.Notification) {
+      pushBtn = '<button type="button" class="btn-outline btn-sm" data-action="enable-push">🔔 Įjungti pranešimus telefone</button>';
     }
     openModal(
       "<h2>Pranešimai</h2>" + items +
@@ -1232,8 +1289,8 @@
       openModal("<h2>Nustatymai</h2><div class=\"hint\">Reikia duomenų bazės atnaujinimo. Administratorius: Supabase SQL Editor paleiskite <b>atnaujinimas-6.sql</b>.</div><div class=\"modal-actions\"><button type=\"button\" class=\"btn\" data-action=\"close-modal\">Uždaryti</button></div>");
       return;
     }
-    var html = "<h2>Nustatymai — sąrašai</h2><div class=\"hint\" style=\"margin-bottom:12px\">Pridėk ar šalink reikšmes — jos naudojamos išskleidžiamuose sąrašuose (tvarkaraščio veiklos tipas, darbų kategorijos, nedarbo tipai, vietos).</div>";
-    ["veiklos_tipas", "kategorija", "nedarbo_tipas", "vieta"].forEach(function (g) {
+    var html = "<h2>Nustatymai — sąrašai</h2><div class=\"hint\" style=\"margin-bottom:12px\">Pridėk ar šalink reikšmes — jos naudojamos išskleidžiamuose sąrašuose (tvarkaraščio veiklos tipas, darbų kategorijos, nedarbo tipai, vietos, mokyklos).</div>";
+    ["veiklos_tipas", "kategorija", "nedarbo_tipas", "vieta", "mokykla"].forEach(function (g) {
       var vals = (S.sarasai || []).filter(function (x) { return x.grupe === g; })
         .sort(function (a, b) { return (a.tvarka - b.tvarka) || (a.reiksme < b.reiksme ? -1 : 1); });
       html += '<div class="set-group"><div class="section-label">' + esc(SARASAI_LABELS[g]) + "</div>" +
@@ -1311,7 +1368,9 @@
           '<div class="form-row"><label>Kategorija</label><select name="kategorija"><option value="">—</option>' +
             listValues("kategorija").map(function (c) { return '<option value="' + esc(c) + '"' + (t.kategorija === c ? " selected" : "") + ">" + esc(c) + "</option>"; }).join("") +
           "</select></div>" +
-        "</div>" +
+          mokyklaRow(t.mokykla) +
+          mokiniaiRow(t.mokiniu_skaicius) +
+        "</div>" + mokDatalist() +
         '<div class="form-row"><label>Aprašymas</label><textarea name="aprasymas">' + esc(t.aprasymas || "") + "</textarea></div>" +
         (isNew ? '<div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="pranesti_visiems" style="width:auto"> Pranešti visiems (visa komanda gaus pranešimą)</label></div>' : "") +
         '<div class="form-error" id="task-err"></div>' +
@@ -1338,6 +1397,8 @@
         prioritetas: fd.get("prioritetas"),
         statusas: fd.get("statusas"),
         kategorija: fd.get("kategorija") || "",
+        mokykla: String(fd.get("mokykla") || "").trim(),
+        mokiniu_skaicius: readMokiniai(fd),
         aprasymas: String(fd.get("aprasymas") || "").trim()
       };
       if (!obj.pavadinimas) return;
@@ -1580,7 +1641,9 @@
         '<div class="form-grid">' +
           '<div class="form-row"><label>Veiklos tipas</label><select name="tipas"><option value="">—</option>' + listValues("veiklos_tipas").map(function (x) { return '<option value="' + esc(x) + '"' + (s.tipas === x ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("") + "</select></div>" +
           '<div class="form-row"><label>Vieta</label><select name="vieta"><option value="">—</option>' + listValues("vieta").map(function (x) { return '<option value="' + esc(x) + '"' + (s.vieta === x ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("") + "</select></div>" +
-        "</div>" +
+          mokyklaRow(s.mokykla) +
+          mokiniaiRow(s.mokiniu_skaicius) +
+        "</div>" + mokDatalist() +
         '<div class="form-row"><label>Pastaba</label><input type="text" name="pastaba" maxlength="120" value="' + esc(s.pastaba || "") + '" placeholder="pvz., papildoma info…"></div>' +
         '<div class="form-error" id="shift-err"></div>' +
         '<div class="modal-actions">' +
@@ -1600,6 +1663,8 @@
         iki: fd.get("iki"),
         tipas: fd.get("tipas") || "",
         vieta: fd.get("vieta") || "",
+        mokykla: String(fd.get("mokykla") || "").trim(),
+        mokiniu_skaicius: readMokiniai(fd),
         pastaba: String(fd.get("pastaba") || "").trim()
       };
       if (!obj.darbuotojas_id) {
@@ -2419,10 +2484,7 @@
         break;
       }
       case "enable-push":
-        Notification.requestPermission().then(function (p) {
-          toast(p === "granted" ? "Įrenginio pranešimai įjungti" : "Pranešimai neįjungti");
-          notifsModal();
-        });
+        enablePush();
         break;
       case "notif-click": {
         var nview = el.getAttribute("data-view") || "darbai";

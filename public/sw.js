@@ -1,6 +1,6 @@
 // Paprastas service worker: programos failai pasiekiami ir be ryšio,
 // bet pirmiausia visada bandoma gauti naujausią versiją iš tinklo.
-var CACHE = "steam-planas-v25";
+var CACHE = "steam-planas-v27";
 var ASSETS = [
   "./",
   "index.html",
@@ -43,6 +43,38 @@ self.addEventListener("fetch", function (e) {
       return caches.match(e.request).then(function (cached) {
         return cached || caches.match("index.html");
       });
+    })
+  );
+});
+
+// ---------- Telefono push pranešimai ----------
+self.addEventListener("push", function (e) {
+  var data = {};
+  try { data = e.data ? e.data.json() : {}; }
+  catch (err) { data = { body: (e.data && e.data.text()) || "" }; }
+  var title = data.title || "VDU STEAM planas";
+  var body = data.body || data.tekstas || "Naujas pranešimas";
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body: body,
+      icon: "icons/icon-192.png",
+      badge: "icons/icon-192.png",
+      tag: data.tag || "steam-notif",
+      renotify: true,
+      data: { url: data.url || "./" }
+    })
+  );
+});
+
+self.addEventListener("notificationclick", function (e) {
+  e.notification.close();
+  var target = (e.notification.data && e.notification.data.url) || "./";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        if ("focus" in list[i]) return list[i].focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
     })
   );
 });
