@@ -265,15 +265,14 @@
   function kabinetasRow(val) {
     return '<div class="form-row"><label>Kabinetas / vieta</label><input type="text" name="kabinetas" list="vietos-list" maxlength="80" value="' + esc(val || "") + '" placeholder="pasirink arba įrašyk…"></div>';
   }
-  // Naujam darbui — pažymimas vienas ar keli darbuotojai (kiekvienam sukuriama kopija).
+  // Naujam darbui — pasirenki po vieną; pasirinkti tampa žymomis (kiekvienam sukuriama kopija).
   function assigneePickerHtml() {
     var emps = activeEmployees();
-    return '<div class="assignee-pick">' +
-      '<label class="ap-row ap-all"><input type="checkbox" id="assignee-all"> <b>Visi darbuotojai</b></label>' +
-      emps.map(function (e) {
-        return '<label class="ap-row"><input type="checkbox" class="assignee-cb" value="' + e.id + '"> ' + esc(e.vardas) + "</label>";
-      }).join("") +
-    "</div>";
+    return '<select id="assignee-add">' +
+      '<option value="">+ pridėti darbuotoją…</option>' +
+      emps.map(function (e) { return '<option value="' + e.id + '">' + esc(e.vardas) + "</option>"; }).join("") +
+    "</select>" +
+    '<div id="assignee-chips" class="assignee-chips"></div>';
   }
   function isAdmin() { return S.roleAs === "darbuotojas" ? false : !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
@@ -1510,6 +1509,7 @@
         '<div id="kom-list">' + komListHtml(task.id) + "</div>" +
         '<div class="kom-form"><input type="text" id="kom-input" maxlength="500" placeholder="Rašyti komentarą…"><button type="button" class="btn btn-sm" id="kom-send">Siųsti</button></div></div>' : "")
     );
+    var assignSel = [];
     ov.querySelector("#task-form").addEventListener("submit", async function (ev) {
       ev.preventDefault();
       if (!canEditTaskModal) { closeModal(); return; }
@@ -1537,7 +1537,7 @@
       }
       // Naujas darbas — gali būti priskirtas vienam ar keliems (po kopiją kiekvienam)
       if (isNew) {
-        var ids = Array.prototype.slice.call(ev.target.querySelectorAll(".assignee-cb:checked")).map(function (c) { return c.value; });
+        var ids = assignSel.slice();
         if (ids.length <= 1) {
           obj.darbuotojas_id = ids[0] || null;
           if (await mutate(API.addTask(obj), "Darbas išsaugotas")) {
@@ -1571,9 +1571,26 @@
         closeModal();
       }
     });
-    var allCb = ov.querySelector("#assignee-all");
-    if (allCb) allCb.addEventListener("change", function () {
-      ov.querySelectorAll(".assignee-cb").forEach(function (c) { c.checked = allCb.checked; });
+    function renderAssignChips() {
+      var box = ov.querySelector("#assignee-chips");
+      if (!box) return;
+      box.innerHTML = assignSel.map(function (eid) {
+        var e = getEmp(eid);
+        return '<span class="set-chip">' + esc(e ? e.vardas : eid) + '<button type="button" class="set-x" data-rm="' + eid + '" title="Pašalinti">×</button></span>';
+      }).join("");
+      Array.prototype.forEach.call(box.querySelectorAll("[data-rm]"), function (b) {
+        b.addEventListener("click", function () {
+          var rid = b.getAttribute("data-rm");
+          assignSel = assignSel.filter(function (x) { return x !== rid; });
+          renderAssignChips();
+        });
+      });
+    }
+    var addSel = ov.querySelector("#assignee-add");
+    if (addSel) addSel.addEventListener("change", function () {
+      var v = addSel.value;
+      if (v && assignSel.indexOf(v) === -1) { assignSel.push(v); renderAssignChips(); }
+      addSel.value = "";
     });
     var del = ov.querySelector("#task-del");
     if (del) del.addEventListener("click", async function () {
