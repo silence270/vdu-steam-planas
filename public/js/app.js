@@ -110,7 +110,8 @@
     "new-task": 1, "new-pool-task": 1, "take-task": 1, "assign-task": 1, "split-task": 1,
     "new-shift": 1, "open-shift": 1, "new-emp": 1, "open-emp": 1, "open-vacations": 1, "del-vacation": 1,
     "import": 1, "avail-add": 1, "avail-negaliu": 1, "avail-reset": 1, "avail-del": 1,
-    "avail-tmpl-negaliu": 1, "avail-tmpl-reset": 1
+    "avail-tmpl-negaliu": 1, "avail-tmpl-reset": 1,
+    "mlist-done": 1, "mlist-del": 1, "mlist-new": 1
   };
 
   // ---------- programėlės diegimas ----------
@@ -595,12 +596,56 @@
     S.shifts.forEach(function (s) { if (s.data === today) workingToday[s.darbuotojas_id] = true; });
     var wtCount = Object.keys(workingToday).length;
     function val(n) { return '<div class="value" data-count="' + n + '">' + (S.viewChanged ? 0 : n) + "</div>"; }
+    var mgr = isManager();
+    function clk(f) { return mgr ? ' metric-click" data-action="metric-list" data-filter="' + f + '" role="button" tabindex="0"' : '"'; }
     return '<div class="metrics">' +
-      '<div class="metric"><div class="label">Aktyvūs darbai</div>' + val(active.length) + "</div>" +
+      '<div class="metric' + clk("active") + '><div class="label">Aktyvūs darbai</div>' + val(active.length) + "</div>" +
       '<div class="metric"><div class="label">Nepriskirtos veiklos</div>' + val(pool.length) + '<div class="sub">' + (Math.round(poolHours * 10) / 10) + " val.</div></div>" +
       '<div class="metric"><div class="label">Šiandien dirba</div>' + val(wtCount) + "</div>" +
-      '<div class="metric' + (late.length ? " alert" : "") + '"><div class="label">Vėluojantys darbai</div>' + val(late.length) + "</div>" +
+      '<div class="metric' + (late.length ? " alert" : "") + clk("late") + '><div class="label">Vėluojantys darbai</div>' + val(late.length) + "</div>" +
     "</div>";
+  }
+
+  // Vadovui/adminui — paspaudus metriką, sąrašas su veiksmais (atlikta / ištrinti / naujas).
+  function metricListModal(filter) {
+    var today = todayIso();
+    var list, title;
+    if (filter === "late") {
+      title = "Vėluojantys darbai";
+      list = S.tasks.filter(function (t) { return t.terminas && t.terminas < today && t.statusas !== "atlikta"; });
+    } else {
+      filter = "active";
+      title = "Aktyvūs darbai";
+      list = S.tasks.filter(function (t) { return t.statusas !== "atlikta"; });
+    }
+    list.sort(function (a, b) {
+      var ta = a.terminas || "9999-99-99", tb = b.terminas || "9999-99-99";
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+    var rows = list.length ? list.map(function (t) {
+      var emp = t.darbuotojas_id ? getEmp(t.darbuotojas_id) : null;
+      var overdue = t.terminas && t.terminas < today;
+      var meta = emp ? esc(shortName(emp.vardas)) : "Nepriskirta";
+      if (t.terminas) meta += ' · <span class="' + (overdue ? "overdue" : "") + '">iki ' + fmtShort(t.terminas) + (overdue ? " (vėluoja)" : "") + "</span>";
+      return '<div class="ml-row">' +
+        '<button type="button" class="ml-main" data-action="open-task" data-id="' + t.id + '">' +
+          '<div class="t-title">' + esc(t.pavadinimas) + "</div>" +
+          '<div class="t-meta">' + meta + "</div>" +
+        "</button>" +
+        '<div class="ml-acts">' +
+          '<button type="button" class="btn-outline btn-sm" data-action="mlist-done" data-id="' + t.id + '" data-filter="' + filter + '">Atlikta</button>' +
+          '<button type="button" class="btn-ghost ml-del" data-action="mlist-del" data-id="' + t.id + '" data-filter="' + filter + '" title="Ištrinti">✕</button>' +
+        "</div>" +
+      "</div>";
+    }).join("") : '<div class="empty">Nėra darbų.</div>';
+    openModal(
+      "<h2>" + title + ' <span class="hint" style="font-weight:400">(' + list.length + ")</span></h2>" +
+      '<div class="ml-list">' + rows + "</div>" +
+      '<div class="modal-actions">' +
+        '<button type="button" class="btn-outline left" data-action="mlist-new">+ Naujas darbas</button>' +
+        '<button type="button" class="btn" data-action="close-modal">Uždaryti</button>' +
+      "</div>"
+    );
   }
 
   function ringHtml(emp, l, vac, size) {
@@ -2442,6 +2487,25 @@
         S.filters.status = "aktyvus";
         render();
         window.scrollTo(0, 0);
+        break;
+      case "metric-list":
+        if (!isManager()) break;
+        metricListModal(el.getAttribute("data-filter"));
+        break;
+      case "mlist-done": {
+        var mf = el.getAttribute("data-filter");
+        mutate(API.updateTask(id, { statusas: "atlikta", atlikta_at: new Date().toISOString() }), "Pažymėta atlikta").then(function (ok) { if (ok) metricListModal(mf); });
+        break;
+      }
+      case "mlist-del": {
+        var mf2 = el.getAttribute("data-filter");
+        if (!confirm("Tikrai ištrinti šį darbą?")) break;
+        mutate(API.deleteTask(id), "Ištrinta").then(function (ok) { if (ok) metricListModal(mf2); });
+        break;
+      }
+      case "mlist-new":
+        if (!isManager()) break;
+        taskModal(null, {});
         break;
       case "week-prev":
         if (S.schedMode === "month") S.monthOffset--;
