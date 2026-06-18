@@ -498,13 +498,22 @@
 
   // ---------- bendras karkasas ----------
 
+  // Versija (automatiškai iš ?v=) + paskutinio atnaujinimo data.
+  var APP_BUILD = "2026-06-18";
+  function buildStamp() {
+    var v = "";
+    var s = document.querySelector('script[src*="app.js?v="]');
+    if (s) { var m = (s.src || "").match(/[?&]v=(\d+)/); if (m) v = "v" + m[1]; }
+    if (!v && !APP_BUILD) return "";
+    return '<span class="bld"> · <span class="bld-v">' + esc(v) + '</span><span class="bld-d"> · ' + esc(APP_BUILD) + "</span></span>";
+  }
   function liveHtml() {
     var cls = "live", txt = "";
     if (S.liveStatus === "live") { cls += " live-on"; txt = "Gyvai"; }
     else if (S.liveStatus === "poll") { cls += " live-poll"; txt = "Kas 3 s"; }
     else if (S.liveStatus === "demo") { cls += " live-demo"; txt = "Demo"; }
     else { txt = "Jungiamasi…"; }
-    return '<span class="' + cls + '" id="live-indicator"><span class="dot"></span><span class="txt">' + txt + "</span></span>";
+    return '<span class="' + cls + '" id="live-indicator"><span class="dot"></span><span class="txt">' + txt + "</span>" + buildStamp() + "</span>";
   }
 
   function shellHtml(content) {
