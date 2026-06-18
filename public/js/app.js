@@ -31,6 +31,7 @@
     viewChanged: true,
     realMe: null,
     viewAsId: null,
+    roleAs: null,
     availability: [],
     availTemplate: [],
     availEmpId: null,
@@ -252,9 +253,11 @@
     var v = fd.get("mokiniu_skaicius");
     return (v === "" || v == null) ? null : Number(v);
   }
-  function isAdmin() { return !!(S.me && S.me.role === "admin"); }
+  function isAdmin() { return S.roleAs === "darbuotojas" ? false : !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
-  function isManager() { return !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
+  function isManager() { return S.roleAs === "darbuotojas" ? false : !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
+  // Ar tikroji rolė leidžia perjungti peržiūrą (admin/vadovas).
+  function canSwitchRole() { return !!(S.realMe && (S.realMe.role === "admin" || S.realMe.role === "vadovas")); }
   // Ar dabar admino „žiūrėti kaip narys" peržiūra (tada rašyti draudžiama).
   function viewingAs() { return !!(S.realMe && S.viewAsId && S.me && S.me.id !== S.realMe.id); }
   // Ar dabartinis vartotojas kuruoja darbuotoją empId (gali valdyti jo darbus/grafiką)?
@@ -521,6 +524,9 @@
     var navBtns = VIEWS.map(function (v) {
       return '<button data-action="nav" data-view="' + v.id + '" class="' + (S.view === v.id ? "active" : "") + '">' + v.label + "</button>";
     }).join("");
+    if (isAdmin()) {
+      navBtns += '<button data-action="nav" data-view="nustatymai" class="' + (S.view === "nustatymai" ? "active" : "") + '">Nustatymai</button>';
+    }
     var bottomBtns = VIEWS.map(function (v) {
       return '<button data-action="nav" data-view="' + v.id + '" class="' + (S.view === v.id ? "active" : "") + '">' + ICONS[v.id] + "<span>" + v.label + "</span></button>";
     }).join("");
@@ -531,12 +537,13 @@
         '<div class="topbar-right">' +
           liveHtml() +
           bellHtml() +
-          '<div class="user-chip">' + avatarHtml(S.me) +
+          '<div class="user-chip">' +
+            '<button class="avatar-btn" data-action="user-menu" title="Profilis ir rolė">' + avatarHtml(S.me) + "</button>" +
             '<button class="btn-ghost" data-action="logout">Atsijungti</button>' +
           "</div>" +
         "</div>" +
       "</header>" +
-      '<main class="main' + (S.viewChanged ? " view-enter" : "") + '">' + migrationBannerHtml() + viewAsBanner() + content + "</main>" +
+      '<main class="main' + (S.viewChanged ? " view-enter" : "") + '">' + migrationBannerHtml() + viewAsBanner() + roleAsBanner() + content + "</main>" +
       '<nav class="bottom-nav">' + bottomBtns + "</nav>";
   }
 
@@ -554,6 +561,34 @@
       '<div><b>👁 Žiūrite kaip:</b> ' + esc(S.me.vardas) + ' <span class="hint">— administratoriaus peržiūra</span></div>' +
       '<button class="btn-outline btn-sm" data-action="view-as-exit">Grįžti į savo vaizdą</button>' +
     "</div>";
+  }
+
+  function roleAsBanner() {
+    if (S.roleAs !== "darbuotojas") return "";
+    return '<div class="card" style="border-color:var(--blue);background:rgba(0,113,227,.08);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div><b>👤 Peržiūra: darbuotojas</b> <span class="hint">— matote, kaip programėlę mato eilinis darbuotojas</span></div>' +
+      '<button class="btn-outline btn-sm" data-action="role-back">Grįžti į administratorių</button>' +
+    "</div>";
+  }
+
+  function userMenuModal() {
+    var role = S.realMe ? S.realMe.role : "";
+    var roleLabel = role === "admin" ? "Administratorius" : role === "vadovas" ? "Vadovas" : "Darbuotojas";
+    var isEmp = S.roleAs === "darbuotojas";
+    var html = "<h2>" + esc(S.realMe ? S.realMe.vardas : "Profilis") + "</h2>" +
+      '<div class="hint" style="margin-bottom:14px">Tikroji rolė: <b>' + esc(roleLabel) + "</b></div>";
+    if (canSwitchRole()) {
+      html += '<div class="hint" style="margin-bottom:8px">Peržiūrėti programėlę kaip:</div>' +
+        '<div class="role-opts">' +
+          '<button type="button" class="role-opt' + (!isEmp ? " active" : "") + '" data-action="role-set" data-role="real"><b>' + esc(roleLabel) + "</b><span>Pilnas valdymas</span></button>" +
+          '<button type="button" class="role-opt' + (isEmp ? " active" : "") + '" data-action="role-set" data-role="darbuotojas"><b>Darbuotojas</b><span>Kaip mato eilinis darbuotojas</span></button>' +
+        "</div>";
+    }
+    html += '<div class="modal-actions">' +
+      '<button type="button" class="btn-outline left" data-action="logout">Atsijungti</button>' +
+      '<button type="button" class="btn" data-action="close-modal">Uždaryti</button>' +
+    "</div>";
+    openModal(html);
   }
 
   function migrationBannerHtml() {
@@ -591,7 +626,7 @@
     var active = S.tasks.filter(function (t) { return t.statusas !== "atlikta"; });
     var pool = poolTasks();
     var poolHours = pool.reduce(function (a, t) { return a + (Number(t.valandos) || 0); }, 0);
-    var late = active.filter(function (t) { return t.terminas && t.terminas < today; });
+    var late = active.filter(isLate);
     var workingToday = {};
     S.shifts.forEach(function (s) { if (s.data === today) workingToday[s.darbuotojas_id] = true; });
     var wtCount = Object.keys(workingToday).length;
@@ -612,7 +647,7 @@
     var list, title;
     if (filter === "late") {
       title = "Vėluojantys darbai";
-      list = S.tasks.filter(function (t) { return t.terminas && t.terminas < today && t.statusas !== "atlikta"; });
+      list = S.tasks.filter(isLate);
     } else {
       filter = "active";
       title = "Aktyvūs darbai";
@@ -624,7 +659,7 @@
     });
     var rows = list.length ? list.map(function (t) {
       var emp = t.darbuotojas_id ? getEmp(t.darbuotojas_id) : null;
-      var overdue = t.terminas && t.terminas < today;
+      var overdue = isLate(t);
       var meta = emp ? esc(shortName(emp.vardas)) : "Nepriskirta";
       if (t.terminas) meta += ' · <span class="' + (overdue ? "overdue" : "") + '">iki ' + fmtShort(t.terminas) + (overdue ? " (vėluoja)" : "") + "</span>";
       return '<div class="ml-row">' +
@@ -778,7 +813,7 @@
     var emp = t.darbuotojas_id ? getEmp(t.darbuotojas_id) : null;
     var editable = canEditTask(t);
     var today = todayIso();
-    var overdue = t.terminas && t.terminas < today && t.statusas !== "atlikta";
+    var overdue = isLate(t);
     var statusCtl;
     if (editable) {
       statusCtl = '<select class="status-select st-' + t.statusas + '" data-change="task-status" data-id="' + t.id + '">' +
@@ -1113,7 +1148,6 @@
     var act = activeEmployees().filter(matchEmp);
     var inact = S.employees.filter(function (e) { return !e.aktyvus && matchEmp(e); });
     var html = '<div class="view-title"><h1>Komanda</h1><div class="actions">' +
-      (isAdmin() ? '<button class="btn-outline" data-action="settings">⚙ Nustatymai</button>' : "") +
       (isAdmin() ? '<button class="btn" data-action="new-emp">+ Pridėti darbuotoją</button>' : "") +
     "</div></div>";
     html += '<div class="toolbar"><input type="search" id="team-search" placeholder="Ieškoti žmogaus…" value="' + esc(S.teamQ) + '" data-input="team-search"></div>';
@@ -1400,7 +1434,7 @@
     var isNew = !task;
     var canEditTaskModal = !viewingAs() && (isNew || canEditTask(task));
     var t = task || {
-      pavadinimas: "", aprasymas: "", valandos: 4, terminas: "",
+      pavadinimas: "", aprasymas: "", valandos: defNum("valandos", 4), terminas: "",
       prioritetas: "vidutinis", statusas: "laukia", kategorija: "",
       darbuotojas_id: opts.pool ? null : (isAdmin() ? null : (S.me ? S.me.id : null))
     };
@@ -1678,7 +1712,7 @@
     var s = shift || {
       darbuotojas_id: presetEmp || (isAdmin() ? "" : (S.me ? S.me.id : "")),
       data: presetDate || todayIso(),
-      nuo: "08:00", iki: "17:00", pastaba: ""
+      nuo: defStr("nuo", "08:00"), iki: defStr("iki", "17:00"), pastaba: ""
     };
     var ov = openModal(
       "<h2>" + (isNew ? "Naujas tvarkaraščio įrašas" : "Įrašo redagavimas") + "</h2>" +
@@ -2106,7 +2140,7 @@
     var today = todayIso();
     var active = S.tasks.filter(function (t) { return t.statusas !== "atlikta"; });
     var pool = poolTasks();
-    var late = active.filter(function (t) { return t.terminas && t.terminas < today; });
+    var late = active.filter(isLate);
     var working = {};
     S.shifts.forEach(function (s) { if (s.data === today) working[s.darbuotojas_id] = true; });
     function tile(n, label, alert) {
@@ -2304,6 +2338,92 @@
 
   // ---------- atvaizdavimas ----------
 
+  // ---------- Nustatymai (adminams, tik kompiuteryje) ----------
+  function appVer() {
+    var s = document.querySelector('script[src*="app.js?v="]');
+    if (s) { var m = (s.src || "").match(/[?&]v=(\d+)/); if (m) return "v" + m[1]; }
+    return "";
+  }
+  function settingRows(group) { return (S.sarasai || []).filter(function (x) { return x.grupe === group; }); }
+  function getSetting(group) { var r = settingRows(group); return r.length ? r[0].reiksme : ""; }
+  function defStr(key, fb) {
+    var rows = settingRows("numatyta");
+    for (var i = 0; i < rows.length; i++) {
+      var rv = String(rows[i].reiksme), ix = rv.indexOf(":");
+      if (ix > 0 && rv.slice(0, ix) === key) return rv.slice(ix + 1);
+    }
+    return fb;
+  }
+  function defNum(key, fb) { var v = Number(defStr(key, String(fb))); return isNaN(v) ? fb : v; }
+  function isEventCat(kat) { return !!kat && listValues("ne_veluoja").indexOf(kat) !== -1; }
+  function isLate(t) {
+    return !!(t.terminas && t.terminas < todayIso() && t.statusas !== "atlikta" && !isEventCat(t.kategorija));
+  }
+  function capRow(label, ok) {
+    return '<div class="sys-row"><span>' + esc(label) + '</span><b class="sys-' + (ok ? "ok" : "bad") + '">' + (ok ? "✓ veikia" : "✕ reikia SQL") + "</b></div>";
+  }
+
+  function viewNustatymai() {
+    if (!isAdmin()) return '<div class="card"><div class="empty">Prieiga tik administratoriams.</div></div>';
+    var caps = (API.getCaps ? API.getCaps() : {}) || {};
+    if (!caps.lists) {
+      return '<div class="view-title"><h1>Nustatymai</h1></div><div class="card"><b>Reikia duomenų bazės atnaujinimo.</b><div class="hint">Supabase SQL Editor paleiskite atnaujinimas-6.sql.</div></div>';
+    }
+    var html = '<div class="view-title"><h1>Nustatymai</h1><span class="hint">tik administratoriams</span></div>';
+
+    html += '<div class="card"><h2>Sąrašai</h2><div class="hint" style="margin-bottom:10px">Reikšmės išskleidžiamiems sąrašams.</div>';
+    ["veiklos_tipas", "kategorija", "nedarbo_tipas", "vieta", "mokykla"].forEach(function (g) {
+      var vals = settingRows(g).sort(function (a, b) { return (a.tvarka - b.tvarka) || (a.reiksme < b.reiksme ? -1 : 1); });
+      html += '<div class="set-group"><div class="section-label">' + esc(SARASAI_LABELS[g]) + "</div>" +
+        '<div class="set-chips">' + (vals.length ? vals.map(function (x) {
+          return '<span class="set-chip">' + esc(x.reiksme) + '<button type="button" class="set-x" data-action="set-del" data-id="' + x.id + '" title="Šalinti">×</button></span>';
+        }).join("") : '<span class="hint">Tuščia</span>') + "</div>" +
+        '<div class="set-add"><input type="text" class="set-input" data-grupe="' + g + '" placeholder="Pridėti naują…" maxlength="60"><button type="button" class="btn-outline btn-sm" data-action="set-add" data-grupe="' + g + '">+ Pridėti</button></div>' +
+      "</div>";
+    });
+    html += "</div>";
+
+    var ne = listValues("ne_veluoja");
+    html += '<div class="card"><h2>Vėlavimo taisyklės</h2><div class="hint" style="margin-bottom:10px">Pažymėk, kurios kategorijos yra <b>renginiai / susirinkimai</b> — jos NEbus skaičiuojamos kaip „vėluojantys darbai".</div><div class="set-toggles">';
+    listValues("kategorija").forEach(function (k) {
+      var ev = ne.indexOf(k) !== -1;
+      html += '<label class="set-toggle"><input type="checkbox" data-change="event-cat" data-kat="' + esc(k) + '"' + (ev ? " checked" : "") + "> " + esc(k) + ' <span class="hint">' + (ev ? "renginys (ne vėluoja)" : "darbas") + "</span></label>";
+    });
+    html += "</div></div>";
+
+    html += '<div class="card"><h2>Numatytosios reikšmės</h2><div class="hint" style="margin-bottom:10px">Naudojama kuriant naują darbą / tvarkaraščio įrašą.</div>' +
+      '<div class="form-grid">' +
+        '<div class="form-row"><label>Darbo valandos</label><input type="number" id="def-valandos" min="0" step="0.5" value="' + esc(defNum("valandos", 4)) + '"></div>' +
+        '<div class="form-row"><label>Pamaina nuo</label><input type="time" id="def-nuo" value="' + esc(defStr("nuo", "08:00")) + '"></div>' +
+        '<div class="form-row"><label>Pamaina iki</label><input type="time" id="def-iki" value="' + esc(defStr("iki", "17:00")) + '"></div>' +
+      "</div>" +
+      '<button type="button" class="btn btn-sm" data-action="save-defaults" style="margin-top:10px">Išsaugoti</button>' +
+    "</div>";
+
+    var calUrl = getSetting("kalendorius_url");
+    html += '<div class="card"><h2>Kalendoriaus nuoroda (.ics)</h2><div class="hint" style="margin-bottom:10px">Adresas Outlook / Google prenumeratai.</div>' +
+      (calUrl ? '<div class="cal-url"><code>' + esc(calUrl) + '</code><button type="button" class="btn-outline btn-sm" data-action="copy-cal" data-url="' + esc(calUrl) + '">Kopijuoti</button></div>' : '<div class="hint">Adresas dar neįrašytas.</div>') +
+      '<div class="set-add" style="margin-top:10px"><input type="text" class="set-input" id="cal-url-input" placeholder="Įklijuok .ics adresą…" value="' + esc(calUrl) + '"><button type="button" class="btn-outline btn-sm" data-action="save-cal">Išsaugoti</button></div>' +
+    "</div>";
+
+    html += '<div class="card"><h2>Sistemos būsena</h2>' +
+      '<div class="sys-row"><span>Versija</span><b>' + esc(appVer()) + "</b></div>" +
+      '<div class="sys-row"><span>Atnaujinta</span><b>' + esc(APP_BUILD) + "</b></div>" +
+      capRow("Pranešimai", caps.extraTables) +
+      capRow("Kuratoriai", caps.curator) +
+      capRow("Prieinamumas", caps.availability) +
+      capRow("Darbų laikas", caps.taskTime) +
+      capRow("Sąrašai", caps.lists) +
+      capRow("Mokykla / mokiniai", caps.mokykla) +
+    "</div>";
+
+    html += '<div class="card"><h2>Eksportas</h2><div class="hint" style="margin-bottom:10px">Atsisiųsk duomenis Excel formatu.</div>' +
+      '<button type="button" class="btn-outline" data-action="export">Eksportuoti į Excel</button>' +
+    "</div>";
+
+    return '<div class="set-view">' + html + "</div>";
+  }
+
   function render() {
     var root = document.getElementById("app");
     var ae = document.activeElement;
@@ -2328,6 +2448,7 @@
       else if (S.view === "darbai") content = viewDarbai();
       else if (S.view === "prieinamumas") content = viewPrieinamumas();
       else if (S.view === "komanda") content = viewKomanda();
+      else if (S.view === "nustatymai") content = viewNustatymai();
       html = shellHtml(content);
     }
     root.innerHTML = html;
@@ -2646,7 +2767,7 @@
         break;
       }
       case "settings":
-        settingsModal();
+        S.view = "nustatymai"; S.viewChanged = true; render(); window.scrollTo(0, 0);
         break;
       case "set-add": {
         var sg = el.getAttribute("data-grupe");
@@ -2655,12 +2776,47 @@
         if (!sval) break;
         var ex = (S.sarasai || []).filter(function (x) { return x.grupe === sg; });
         if (ex.some(function (x) { return String(x.reiksme).toLowerCase() === sval.toLowerCase(); })) { toast("Tokia reikšmė jau yra."); break; }
-        mutate(API.addListItem({ grupe: sg, reiksme: sval, tvarka: ex.length + 1 }), "Pridėta").then(function (ok) { if (ok) settingsModal(); });
+        mutate(API.addListItem({ grupe: sg, reiksme: sval, tvarka: ex.length + 1 }), "Pridėta");
         break;
       }
       case "set-del":
-        mutate(API.deleteListItem(id), "Pašalinta").then(function (ok) { if (ok) settingsModal(); });
+        mutate(API.deleteListItem(id), "Pašalinta");
         break;
+      case "save-defaults": {
+        var dv = (document.getElementById("def-valandos") || {}).value;
+        var dn = (document.getElementById("def-nuo") || {}).value;
+        var di = (document.getElementById("def-iki") || {}).value;
+        var oldD = (S.sarasai || []).filter(function (x) { return x.grupe === "numatyta"; });
+        (async function () {
+          try {
+            for (var i = 0; i < oldD.length; i++) await API.deleteListItem(oldD[i].id);
+            await API.addListItem({ grupe: "numatyta", reiksme: "valandos:" + (dv || "4"), tvarka: 1 });
+            await API.addListItem({ grupe: "numatyta", reiksme: "nuo:" + (dn || "08:00"), tvarka: 2 });
+            await API.addListItem({ grupe: "numatyta", reiksme: "iki:" + (di || "17:00"), tvarka: 3 });
+            toast("Numatytosios išsaugotos");
+            await refreshData();
+          } catch (e) { toast(e.message || "Nepavyko"); }
+        })();
+        break;
+      }
+      case "save-cal": {
+        var cu = ((document.getElementById("cal-url-input") || {}).value || "").trim();
+        var oldC = (S.sarasai || []).filter(function (x) { return x.grupe === "kalendorius_url"; });
+        (async function () {
+          try {
+            for (var i = 0; i < oldC.length; i++) await API.deleteListItem(oldC[i].id);
+            if (cu) await API.addListItem({ grupe: "kalendorius_url", reiksme: cu, tvarka: 1 });
+            toast("Išsaugota");
+            await refreshData();
+          } catch (e) { toast(e.message || "Nepavyko"); }
+        })();
+        break;
+      }
+      case "copy-cal": {
+        var curl = el.getAttribute("data-url") || "";
+        if (navigator.clipboard && curl) navigator.clipboard.writeText(curl).then(function () { toast("Nukopijuota"); }).catch(function () { toast("Nepavyko kopijuoti"); });
+        break;
+      }
       case "view-as":
         if (!(S.realMe && S.realMe.role === "admin")) break;
         S.viewAsId = id;
@@ -2671,6 +2827,26 @@
       case "view-as-exit":
         S.viewAsId = null;
         S.view = "apzvalga";
+        render();
+        window.scrollTo(0, 0);
+        break;
+      case "user-menu":
+        userMenuModal();
+        break;
+      case "role-set": {
+        if (!canSwitchRole()) { closeModal(); break; }
+        S.roleAs = (el.getAttribute("data-role") === "darbuotojas") ? "darbuotojas" : null;
+        S.viewAsId = null;
+        if (!isAdmin() && S.view === "nustatymai") S.view = "apzvalga";
+        closeModal();
+        S.viewChanged = true;
+        render();
+        window.scrollTo(0, 0);
+        break;
+      }
+      case "role-back":
+        S.roleAs = null;
+        S.viewChanged = true;
         render();
         window.scrollTo(0, 0);
         break;
@@ -2800,6 +2976,15 @@
     } else if (what === "avail-emp") {
       S.availEmpId = el.value;
       render();
+    } else if (what === "event-cat") {
+      if (!isAdmin()) { render(); return; }
+      var ekat = el.getAttribute("data-kat");
+      if (el.checked) {
+        mutate(API.addListItem({ grupe: "ne_veluoja", reiksme: ekat, tvarka: 0 }), "Pažymėta kaip renginys");
+      } else {
+        var erow = (S.sarasai || []).find(function (x) { return x.grupe === "ne_veluoja" && x.reiksme === ekat; });
+        if (erow) mutate(API.deleteListItem(erow.id), "Žymėjimas nuimtas");
+      }
     }
   });
 

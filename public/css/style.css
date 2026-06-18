@@ -749,3 +749,32 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .ml-main .t-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .ml-acts { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .ml-del { color: var(--red); padding: 6px 10px; font-size: 15px; }
+
+/* Nustatymų tab'as */
+.set-view .card { margin-bottom: 16px; }
+.set-view .form-row { margin-bottom: 0; }
+.set-view .form-row label { display: block; font-size: 13px; font-weight: 530; color: var(--muted); margin-bottom: 5px; }
+.set-view input:not(.set-input) { width: 100%; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--surface); color: var(--text); font-size: 15px; }
+.set-toggles { display: flex; flex-direction: column; gap: 2px; }
+.set-toggle { display: flex; align-items: center; gap: 9px; padding: 8px 6px; border-radius: 10px; cursor: pointer; }
+.set-toggle:hover { background: var(--fill); }
+.set-toggle input { width: auto; }
+.sys-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.sys-row:first-of-type { border-top: none; }
+.sys-row b.sys-ok { color: var(--green); }
+.sys-row b.sys-bad { color: var(--amber); }
+.cal-url { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--fill); padding: 9px 12px; border-radius: 11px; }
+.cal-url code { font-size: 12px; word-break: break-all; flex: 1; min-width: 0; color: var(--text); }
+.set-view .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+
+/* Avataro mygtukas + rolės pasirinkimas */
+.avatar-btn { border: none; background: transparent; padding: 0; cursor: pointer; border-radius: 50%; line-height: 0; transition: transform .12s ease, box-shadow .15s ease; }
+.avatar-btn:hover { transform: scale(1.06); box-shadow: var(--primary-glow); }
+.avatar-btn:active { transform: scale(0.97); }
+.role-opts { display: flex; flex-direction: column; gap: 8px; }
+.role-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: 12px; padding: 12px 14px; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.role-opt:hover { border-color: var(--primary); }
+.role-opt.active { border-color: transparent; background: var(--primary-soft); color: var(--primary-dark); }
+.role-opt b { font-weight: 600; }
+.role-opt span { font-size: 12.5px; color: var(--muted); }
+.role-opt.active span { color: var(--primary-dark); opacity: .8; }
