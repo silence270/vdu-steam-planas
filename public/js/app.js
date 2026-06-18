@@ -530,7 +530,7 @@
     var s = document.querySelector('script[src*="app.js?v="]');
     if (s) { var m = (s.src || "").match(/[?&]v=(\d+)/); if (m) v = "v" + m[1]; }
     if (!v && !APP_BUILD) return "";
-    return '<span class="bld"> · <span class="bld-v">' + esc(v) + '</span><span class="bld-d"> · ' + esc(APP_BUILD) + "</span></span>";
+    return '<span class="bld" title="Versija ir paskutinio atnaujinimo data"> · <span class="bld-v">' + esc(v) + '</span><span class="bld-d"> · atnaujinta ' + esc(APP_BUILD) + "</span></span>";
   }
   function liveHtml() {
     var cls = "live", txt = "";

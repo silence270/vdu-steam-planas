@@ -734,7 +734,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   .metric:hover, .btn:hover { transform: none !important; }
 }
-.live .bld { opacity: .55; font-weight: 450; font-variant-numeric: tabular-nums; }
+.live .bld { opacity: .72; font-weight: 450; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .live .bld-d { display: none; } }
 
 /* Paspaudžiamos metrikos (vadovui) + sąrašo modalas */
