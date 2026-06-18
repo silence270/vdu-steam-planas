@@ -26,6 +26,7 @@
     tvPanel: 0,
     tvTimer: null,
     schedMode: "week",
+    schedEmp: "",
     monthOffset: 0,
     teamQ: "",
     viewChanged: true,
@@ -230,6 +231,14 @@
   // Kieno tvarkaraštį vartotojas gali MATYTI: vadovai/admin — visus; kiti — tik save (ir kuruojamus).
   function visibleEmps() {
     return isManager() ? activeEmployees() : activeEmployees().filter(function (e) { return canManageEmp(e.id); });
+  }
+  // Tvarkaraštyje rodomi darbuotojai: pagal matomumą; admin/vadovas gali pasirinkti vieną (S.schedEmp).
+  function schedEmps() {
+    var vis = visibleEmps();
+    if (S.schedEmp && vis.some(function (e) { return e.id === S.schedEmp; })) {
+      return vis.filter(function (e) { return e.id === S.schedEmp; });
+    }
+    return vis;
   }
   // Valdomo sąrašo reikšmės (iš DB, arba numatytosios jei dar tuščia/be migracijos).
   function listValues(grupe) {
@@ -967,13 +976,29 @@
     var days = [];
     for (var i = 0; i < 7; i++) days.push(addDays(mon, i));
     var today = todayIso();
-    var emps = visibleEmps();
+    var vis = visibleEmps();
+    var emps = schedEmps();
+    // Pasirinkus vieną darbuotoją, nauji įrašai/darbai iškart jam priskiriami.
+    var pickedEmp = (S.schedEmp && vis.some(function (e) { return e.id === S.schedEmp; })) ? S.schedEmp : "";
+    // Prefill naujam įrašui/darbui tik jei pasirinktą darbuotoją galima valdyti (admin — visus; vadovas — savo/kuruojamus).
+    var empAttr = (pickedEmp && canManageEmp(pickedEmp)) ? ' data-emp="' + esc(pickedEmp) + '"' : "";
 
     var html = '<div class="view-title"><h1>Tvarkaraštis</h1><div class="actions">' +
       (isAdmin() && S.schedMode === "week" ? '<button class="btn-outline" data-action="copy-week">Kopijuoti praėjusią savaitę</button>' : "") +
-      (isAdmin() ? '<button class="btn btn-task" data-action="new-task">+ Naujas darbas</button>' : "") +
-      '<button class="btn" data-action="new-shift">+ Naujas įrašas</button>' +
+      (isAdmin() ? '<button class="btn btn-task" data-action="new-task"' + empAttr + ">+ Naujas darbas</button>" : "") +
+      '<button class="btn" data-action="new-shift"' + empAttr + ">+ Naujas įrašas</button>" +
     "</div></div>";
+
+    // Admin/vadovas: pasirinkti vieno žmogaus tvarkaraštį (ar visų).
+    if (vis.length > 1) {
+      html += '<div class="card sched-pick"><label class="sp-label">Tvarkaraštis:</label>' +
+        '<select class="sched-emp-sel" data-change="sched-emp"><option value="">Visi darbuotojai</option>' +
+        vis.map(function (e) {
+          return '<option value="' + e.id + '"' + (e.id === pickedEmp ? " selected" : "") + ">" + esc(e.vardas) + (S.me && e.id === S.me.id ? " (aš)" : "") + "</option>";
+        }).join("") + "</select>" +
+        (pickedEmp ? '<button class="btn-ghost btn-sm" data-action="sched-all">Rodyti visus</button>' : "") +
+      "</div>";
+    }
 
     html += '<div class="card"><div class="week-nav">' +
       '<div class="wn-left">' +
@@ -1061,7 +1086,7 @@
       ? '<div class="hint" style="margin-bottom:8px;color:var(--red)">Pasižymėjo „negaliu": ' + negToday.map(function (e) { return esc(e.vardas); }).join(", ") + "</div>"
       : "";
 
-    var dayTasksM = S.tasks.filter(function (t) { return t.terminas === selIso && t.statusas !== "atlikta"; });
+    var dayTasksM = S.tasks.filter(function (t) { return t.terminas === selIso && t.statusas !== "atlikta" && (!pickedEmp || t.darbuotojas_id === pickedEmp); });
     var taskListM = dayTasksM.length ? '<div class="section-label">Darbų terminai</div>' + dayTasksM.map(function (t) {
       var te = getEmp(t.darbuotojas_id);
       return '<div class="task-row" data-action="open-task" data-id="' + t.id + '">' +
@@ -1093,20 +1118,25 @@
     d.setDate(first.getDate() - (first.getDay() + 6) % 7);
     var today = todayIso();
     var month = first.getMonth();
-    var emps = visibleEmps();
+    var vis = visibleEmps();
+    var emps = schedEmps();
+    var visSet = {};
+    emps.forEach(function (e) { visSet[e.id] = true; });
+    // Ta pati patikra kaip savaitės vaizde — kad nepasenusi reikšmė nesusiaurintų klaidingai.
+    var pickedEmp = (S.schedEmp && vis.some(function (e) { return e.id === S.schedEmp; })) ? S.schedEmp : "";
     var rows = "";
     for (var w = 0; w < 6; w++) {
       var cells = "";
       for (var i = 0; i < 7; i++) {
         var dIso = isoFromDate(d);
         var inMonth = d.getMonth() === month;
-        var dayShifts = S.shifts.filter(function (s) { return s.data === dIso; });
+        var dayShifts = S.shifts.filter(function (s) { return s.data === dIso && visSet[s.darbuotojas_id]; });
         var dots = dayShifts.slice(0, 8).map(function (s) {
           var e = getEmp(s.darbuotojas_id);
           return '<span class="m-dot" title="' + esc(e ? e.vardas : "") + '" style="background:' + esc(e ? e.spalva : "#999") + '"></span>';
         }).join("") + (dayShifts.length > 8 ? "<small>+" + (dayShifts.length - 8) + "</small>" : "");
         var vacN = emps.filter(function (e) { return vacationOf(e.id, dIso); }).length;
-        var dayTasksN = S.tasks.filter(function (t) { return t.terminas === dIso && t.statusas !== "atlikta"; }).length;
+        var dayTasksN = S.tasks.filter(function (t) { return t.terminas === dIso && t.statusas !== "atlikta" && (!pickedEmp || t.darbuotojas_id === pickedEmp); }).length;
         cells += '<td class="m-cell' + (inMonth ? "" : " m-out") + (dIso === today ? " today" : "") + '" data-action="month-day" data-date="' + dIso + '">' +
           '<div class="m-num">' + d.getDate() + "</div>" +
           '<div class="m-dots">' + dots + "</div>" +
@@ -1509,7 +1539,7 @@
         '<div id="kom-list">' + komListHtml(task.id) + "</div>" +
         '<div class="kom-form"><input type="text" id="kom-input" maxlength="500" placeholder="Rašyti komentarą…"><button type="button" class="btn btn-sm" id="kom-send">Siųsti</button></div></div>' : "")
     );
-    var assignSel = [];
+    var assignSel = (isNew && opts.presetEmp && canManageEmp(opts.presetEmp)) ? [opts.presetEmp] : [];
     ov.querySelector("#task-form").addEventListener("submit", async function (ev) {
       ev.preventDefault();
       if (!canEditTaskModal) { closeModal(); return; }
@@ -1592,6 +1622,7 @@
       if (v && assignSel.indexOf(v) === -1) { assignSel.push(v); renderAssignChips(); }
       addSel.value = "";
     });
+    renderAssignChips();
     var del = ov.querySelector("#task-del");
     if (del) del.addEventListener("click", async function () {
       if (!confirm("Tikrai ištrinti šį darbą?")) return;
@@ -2665,7 +2696,7 @@
         exportExcel();
         break;
       case "new-task":
-        taskModal(null, {});
+        taskModal(null, { presetEmp: el.getAttribute("data-emp") || null });
         break;
       case "new-pool-task":
         taskModal(null, { pool: true });
@@ -2740,6 +2771,9 @@
         if (S.schedMode === "month") S.monthOffset = 0;
         else { S.weekOffset = 0; S.selDay = (new Date().getDay() + 6) % 7; }
         render();
+        break;
+      case "sched-all":
+        S.schedEmp = ""; render();
         break;
       case "sched-week":
         S.schedMode = "week"; render();
@@ -2919,6 +2953,7 @@
         if (!(S.realMe && S.realMe.role === "admin")) break;
         S.viewAsId = id;
         S.roleAs = null;
+        S.schedEmp = "";
         resolveMe();
         S.view = "apzvalga";
         render();
@@ -2926,6 +2961,7 @@
         break;
       case "view-as-exit":
         S.viewAsId = null;
+        S.schedEmp = "";
         resolveMe();
         S.view = "apzvalga";
         render();
@@ -2938,6 +2974,7 @@
         if (!canSwitchRole()) { closeModal(); break; }
         S.roleAs = (el.getAttribute("data-role") === "darbuotojas") ? "darbuotojas" : null;
         S.viewAsId = null;
+        S.schedEmp = "";
         if (!isAdmin() && (S.view === "nustatymai")) S.view = "apzvalga";
         closeModal();
         S.viewChanged = true;
@@ -2947,6 +2984,7 @@
       }
       case "role-back":
         S.roleAs = null;
+        S.schedEmp = "";
         S.viewChanged = true;
         render();
         window.scrollTo(0, 0);
@@ -3073,6 +3111,9 @@
     } else if (what === "filter-kat") {
       S.filters.kat = el.value;
       render();
+    } else if (what === "sched-emp") {
+      S.schedEmp = el.value;
+      render();
     } else if (what === "avail-emp") {
       S.availEmpId = el.value;
       render();
@@ -3088,6 +3129,7 @@
     } else if (what === "switch-view-as") {
       if (!(S.realMe && S.realMe.role === "admin")) { render(); return; }
       S.viewAsId = el.value;
+      S.schedEmp = "";
       resolveMe();
       S.view = "apzvalga";
       render();

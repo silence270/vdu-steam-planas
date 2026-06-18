@@ -621,6 +621,9 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Prieinamumas */
+.sched-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sched-pick .sp-label { font-weight: 600; letter-spacing: -0.01em; }
+.sched-emp-sel { padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 15px; min-width: 220px; flex: 1 1 220px; max-width: 340px; }
 .avail-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .avail-emp-sel { padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 15px; min-width: 200px; }
 .avail-seg { margin-left: auto; }
