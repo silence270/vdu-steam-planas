@@ -28,6 +28,9 @@
     schedMode: "week",
     schedEmp: "",
     monthOffset: 0,
+    loadMode: "visi",
+    loadWeekOffset: 0,
+    loadMonthOffset: 0,
     teamQ: "",
     viewChanged: true,
     realMe: null,
@@ -307,16 +310,37 @@
     return isAdmin() || (S.me && (s.darbuotojas_id === S.me.id || managesEmp(s.darbuotojas_id)));
   }
 
-  function loadOf(empId) {
+  // Užkrova. Be opts — visų aktyvių darbų suma vs savaitės valandos (kaip anksčiau).
+  // Su opts.mode "savaite"/"menuo" — tik to laikotarpio terminų darbai (+ be termino), talpa pagal laikotarpį.
+  function loadOf(empId, opts) {
+    opts = opts || {};
+    var mode = opts.mode || "visi";
+    var emp = getEmp(empId);
+    var weekCap = emp ? Number(emp.savaites_valandos) || 40 : 40;
+    var lo = null, hi = null, cap = weekCap;
+    if (mode === "savaite") {
+      var mon = startOfWeek(opts.weekOffset || 0);
+      lo = isoFromDate(mon); hi = isoFromDate(addDays(mon, 6));
+      cap = weekCap;
+    } else if (mode === "menuo") {
+      var md = new Date();
+      md = new Date(md.getFullYear(), md.getMonth() + (opts.monthOffset || 0), 1);
+      lo = isoFromDate(md); hi = isoFromDate(new Date(md.getFullYear(), md.getMonth() + 1, 0));
+      cap = Math.round(weekCap * 4.3);
+    }
     var hours = 0;
     S.tasks.forEach(function (t) {
-      if (t.darbuotojas_id === empId && t.statusas !== "atlikta") hours += Number(t.valandos) || 0;
+      if (t.darbuotojas_id !== empId || t.statusas === "atlikta") return;
+      // Pagal terminą; darbai be termino skaičiuojami visada (nuolatiniai).
+      if (mode !== "visi" && t.terminas && (t.terminas < lo || t.terminas > hi)) return;
+      hours += Number(t.valandos) || 0;
     });
-    var emp = getEmp(empId);
-    var cap = emp ? Number(emp.savaites_valandos) || 40 : 40;
-    var pct = Math.round((hours / cap) * 100);
+    var pct = cap ? Math.round((hours / cap) * 100) : 0;
     return { hours: Math.round(hours * 10) / 10, cap: cap, pct: pct };
   }
+  function loadOpts() { return { mode: S.loadMode, weekOffset: S.loadWeekOffset, monthOffset: S.loadMonthOffset }; }
+  function loadMonthDate() { var n = new Date(); return new Date(n.getFullYear(), n.getMonth() + S.loadMonthOffset, 1); }
+  function loadMonthLabel() { var d = loadMonthDate(); return d.getFullYear() + " m. " + MONTHS_NOM[d.getMonth()].toLowerCase(); }
   // Valandos -> etato dalis (40 val. = 1 etatas).
   function etatoStr(hours) { return Math.round((Number(hours) || 0) / 40 * 100) / 100; }
   function fillClass(pct) {
@@ -736,10 +760,37 @@
     "</div>";
   }
 
-  function loadRingsHtml() {
+  function loadModeControls() {
+    var modes = [["visi", "Visi"], ["savaite", "Savaitė"], ["menuo", "Mėnuo"]];
+    var seg = '<div class="segmented load-seg">' + modes.map(function (m) {
+      return '<button class="' + (S.loadMode === m[0] ? "active" : "") + '" data-action="load-mode" data-m="' + m[0] + '">' + m[1] + "</button>";
+    }).join("") + "</div>";
+    var nav = "";
+    if (S.loadMode === "savaite") {
+      var mon = startOfWeek(S.loadWeekOffset);
+      nav = '<div class="load-nav"><button class="btn-outline btn-sm wn-arrow" data-action="load-prev">‹</button>' +
+        '<span class="range">' + weekRangeLabel(mon) + "</span>" +
+        '<button class="btn-outline btn-sm wn-arrow" data-action="load-next">›</button>' +
+        (S.loadWeekOffset !== 0 ? '<button class="btn-ghost btn-sm" data-action="load-now">Ši savaitė</button>' : "") + "</div>";
+    } else if (S.loadMode === "menuo") {
+      nav = '<div class="load-nav"><button class="btn-outline btn-sm wn-arrow" data-action="load-prev">‹</button>' +
+        '<span class="range">' + loadMonthLabel() + "</span>" +
+        '<button class="btn-outline btn-sm wn-arrow" data-action="load-next">›</button>' +
+        (S.loadMonthOffset !== 0 ? '<button class="btn-ghost btn-sm" data-action="load-now">Šis mėnuo</button>' : "") + "</div>";
+    }
+    return '<div class="load-controls">' + seg + nav + "</div>";
+  }
+  function loadModeHint() {
+    if (S.loadMode === "savaite") return "Pasirinktos savaitės terminų darbai (+ be termino), palyginus su savaitės valandomis. Paspauskite žmogų — pamatysite jo darbus.";
+    if (S.loadMode === "menuo") return "Pasirinkto mėnesio terminų darbai (+ be termino), palyginus su mėnesio valandomis (≈ savaitės × 4,3). Paspauskite žmogų — pamatysite jo darbus.";
+    return "Visų aktyvių darbų valandos, palyginus su savaitės valandomis. Paspauskite žmogų — pamatysite jo darbus.";
+  }
+
+  function loadRingsHtml(lopts) {
     var today = todayIso();
+    lopts = lopts || loadOpts();
     var rows = activeEmployees().map(function (e) {
-      return { e: e, l: loadOf(e.id), vac: vacationOf(e.id, today) };
+      return { e: e, l: loadOf(e.id, lopts), vac: vacationOf(e.id, today) };
     });
     rows.sort(function (a, b) { return b.l.pct - a.l.pct; });
     if (!rows.length) return '<div class="empty">Nėra darbuotojų.</div>';
@@ -752,10 +803,11 @@
     }).join("") + "</div>";
   }
 
-  function loadRowsHtml() {
+  function loadRowsHtml(lopts) {
     var today = todayIso();
+    lopts = lopts || loadOpts();
     var rows = activeEmployees().map(function (e) {
-      return { e: e, l: loadOf(e.id), vac: vacationOf(e.id, today) };
+      return { e: e, l: loadOf(e.id, lopts), vac: vacationOf(e.id, today) };
     });
     rows.sort(function (a, b) { return b.l.pct - a.l.pct; });
     if (!rows.length) return '<div class="empty">Nėra darbuotojų.</div>';
@@ -817,7 +869,8 @@
       "</div></div>";
     html += metricsHtml();
     if (isManager()) {
-      html += '<div class="card"><h2>Komandos užkrova</h2><div class="hint" style="margin-bottom:14px">Aktyvių darbų valandos, palyginus su savaitės valandomis. Paspauskite žmogų — pamatysite jo darbus.</div>' + loadRingsHtml() + "</div>";
+      html += '<div class="card"><div class="load-head"><h2>Komandos užkrova</h2>' + loadModeControls() + "</div>" +
+        '<div class="hint" style="margin-bottom:14px">' + loadModeHint() + "</div>" + loadRingsHtml() + "</div>";
     }
     html += '<div class="card"><h2>Bendros veiklos — dar nepriskirtos</h2>';
     if (pool.length) {
@@ -2347,7 +2400,7 @@
       '<div class="tv-dash">' +
         tvStatsHtml() +
         '<div class="tv-grid">' +
-          '<section class="tv-card tv-load tv-span2"><h2 class="tv-title">Komandos užkrova</h2>' + loadRingsHtml() + "</section>" +
+          '<section class="tv-card tv-load tv-span2"><h2 class="tv-title">Komandos užkrova</h2>' + loadRingsHtml({ mode: "visi" }) + "</section>" +
           '<section class="tv-card"><h2 class="tv-title">Ši savaitė · ' + esc(weekRangeLabel(mon)) + '</h2>' + tvWeekHtml() + "</section>" +
           '<div class="tv-col">' +
             '<section class="tv-card"><h2 class="tv-title">Artimiausi terminai</h2>' + tvDeadlinesHtml() + "</section>" +
@@ -2774,6 +2827,23 @@
         break;
       case "sched-all":
         S.schedEmp = ""; render();
+        break;
+      case "load-mode":
+        S.loadMode = el.getAttribute("data-m") || "visi";
+        S.loadWeekOffset = 0; S.loadMonthOffset = 0;
+        render();
+        break;
+      case "load-prev":
+        if (S.loadMode === "menuo") S.loadMonthOffset--; else S.loadWeekOffset--;
+        render();
+        break;
+      case "load-next":
+        if (S.loadMode === "menuo") S.loadMonthOffset++; else S.loadWeekOffset++;
+        render();
+        break;
+      case "load-now":
+        S.loadWeekOffset = 0; S.loadMonthOffset = 0;
+        render();
         break;
       case "sched-week":
         S.schedMode = "week"; render();

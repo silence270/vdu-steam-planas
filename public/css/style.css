@@ -620,10 +620,17 @@ input[type="range"]::-webkit-slider-thumb {
   .tv-grid { grid-template-columns: 1fr; }
 }
 
-/* Prieinamumas */
+/* Komandos užkrova — laikotarpio valdikliai */
+.load-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.load-head h2 { margin: 0; }
+.load-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.load-nav { display: flex; align-items: center; gap: 8px; }
+.load-nav .range { font-weight: 600; min-width: 0; text-align: center; letter-spacing: -0.02em; white-space: nowrap; }
+/* Tvarkaraščio darbuotojo pasirinkimas */
 .sched-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sched-pick .sp-label { font-weight: 600; letter-spacing: -0.01em; }
 .sched-emp-sel { padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 15px; min-width: 220px; flex: 1 1 220px; max-width: 340px; }
+/* Prieinamumas */
 .avail-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .avail-emp-sel { padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 15px; min-width: 200px; }
 .avail-seg { margin-left: auto; }
