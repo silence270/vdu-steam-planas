@@ -570,7 +570,7 @@
   // ---------- bendras karkasas ----------
 
   // Versija (automatiškai iš ?v=) + paskutinio atnaujinimo data.
-  var APP_BUILD = "2026-06-18";
+  var APP_BUILD = "2026-06-21";
   function buildStamp() {
     var v = "";
     var s = document.querySelector('script[src*="app.js?v="]');
