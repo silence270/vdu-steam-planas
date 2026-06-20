@@ -279,7 +279,7 @@
   }
   // Naujam darbui — pasirenki po vieną; pasirinkti tampa žymomis (kiekvienam sukuriama kopija).
   function assigneePickerHtml() {
-    var emps = activeEmployees();
+    var emps = manageableEmps();
     return '<select id="assignee-add">' +
       '<option value="">+ pridėti darbuotoją…</option>' +
       emps.map(function (e) { return '<option value="' + e.id + '">' + esc(e.vardas) + "</option>"; }).join("") +
@@ -291,8 +291,6 @@
   function isManager() { return S.roleAs === "darbuotojas" ? false : !!(S.me && (S.me.role === "admin" || S.me.role === "vadovas")); }
   // Ar tikroji rolė leidžia perjungti peržiūrą (admin/vadovas).
   function canSwitchRole() { return !!(S.realMe && (S.realMe.role === "admin" || S.realMe.role === "vadovas")); }
-  // Ar dabar admino „žiūrėti kaip narys" peržiūra (tada rašyti draudžiama).
-  function viewingAs() { return !!(S.realMe && S.viewAsId && S.me && S.me.id !== S.realMe.id); }
   // Ar dabartinis vartotojas kuruoja darbuotoją empId (gali valdyti jo darbus/grafiką)?
   function managesEmp(empId) {
     if (!S.me || !empId) return false;
@@ -302,6 +300,12 @@
   // Ar vartotojas gali valdyti šio darbuotojo įrašus (admin / pats / kuratorius)?
   function canManageEmp(empId) {
     return isAdmin() || (S.me && (S.me.id === empId || managesEmp(empId)));
+  }
+  // Kuriems darbuotojams gali skirti darbą: vadovai/admin — visiems; kiti — sau + kuruojamiems.
+  function manageableEmps() {
+    if (isManager()) return activeEmployees();
+    if (!S.me) return [];
+    return [S.me].concat(activeEmployees().filter(function (e) { return e.id !== S.me.id && managesEmp(e.id); }));
   }
   function canEditTask(t) {
     return isAdmin() || (S.me && (t.darbuotojas_id === S.me.id || managesEmp(t.darbuotojas_id)));
@@ -516,6 +520,14 @@
       var as = S.employees.find(function (e) { return e.id === S.viewAsId; });
       if (as) S.me = as; else S.viewAsId = null;
     }
+  }
+  // Perjungus rolę / „žiūrėti kaip" — išvalom per-konteksto rodinių būseną, kad nelikt pasenusio filtro.
+  function resetViewState() {
+    S.schedEmp = "";
+    S.loadMode = "visi"; S.loadWeekOffset = 0; S.loadMonthOffset = 0;
+    S.availEmpId = null;
+    S.selDay = null;
+    S.filters = { emp: "", status: "aktyvus", q: "", kat: "" };
   }
 
   async function refreshData() {
@@ -803,25 +815,6 @@
     }).join("") + "</div>";
   }
 
-  function loadRowsHtml(lopts) {
-    var today = todayIso();
-    lopts = lopts || loadOpts();
-    var rows = activeEmployees().map(function (e) {
-      return { e: e, l: loadOf(e.id, lopts), vac: vacationOf(e.id, today) };
-    });
-    rows.sort(function (a, b) { return b.l.pct - a.l.pct; });
-    if (!rows.length) return '<div class="empty">Nėra darbuotojų.</div>';
-    return rows.map(function (r) {
-      return '<div class="load-row" data-action="goto-emp-tasks" data-id="' + r.e.id + '" title="Rodyti darbus">' +
-        '<div class="who">' + avatarHtml(r.e) +
-          '<div style="min-width:0"><div class="name">' + esc(r.e.vardas) + '</div><div class="role">' + esc(r.e.pareigos || "") + "</div></div>" +
-        "</div>" +
-        '<div class="track"><div class="fill ' + fillClass(r.l.pct) + '" style="width:' + Math.min(100, r.l.pct) + '%"></div></div>' +
-        '<div class="nums">' + r.l.pct + "% " + (r.vac ? '<span class="chip chip-blue">' + vacLabel(r.vac.tipas) + "</span>" : loadBadge(r.l.pct)) + "<small>" + r.l.hours + " val. iš " + r.l.cap + "</small></div>" +
-      "</div>";
-    }).join("");
-  }
-
   function dueBadge(t) {
     if (!t.terminas || t.statusas === "atlikta") return "";
     var today = todayIso();
@@ -865,7 +858,7 @@
     var mine = S.me ? S.tasks.filter(function (t) { return t.darbuotojas_id === S.me.id && t.statusas !== "atlikta"; }) : [];
     var html = '<div class="view-title"><div><h1>' + esc(greetingText()) + '</h1><div class="view-sub">' + todayLongLabel() + "</div></div><div class=\"actions\">" +
       (isManager() ? '<button class="btn-outline desktop-only" data-action="tv-on">TV režimas</button>' : "") +
-      (isAdmin() ? '<button class="btn btn-task" data-action="new-task">+ Naujas darbas</button>' : "") +
+      '<button class="btn btn-task" data-action="new-task">+ Naujas darbas</button>' +
       "</div></div>";
     html += metricsHtml();
     if (isManager()) {
@@ -952,9 +945,13 @@
       return (t.kategorija || "") === f.kat;
     }
 
+    // Paprastas darbuotojas mato tik savo (+ kuruojamų) darbus — kaip ir tvarkaraščius.
+    var visSet = {};
+    visibleEmps().forEach(function (e) { visSet[e.id] = true; });
     var pool = poolTasks().filter(matchQ).filter(matchKat);
     var list = S.tasks.filter(function (t) {
       if (!t.darbuotojas_id) return false;
+      if (!isManager() && !visSet[t.darbuotojas_id]) return false;
       if (f.emp === "pool") return false;
       if (f.emp && t.darbuotojas_id !== f.emp) return false;
       return matchQ(t) && matchStatus(t) && matchKat(t);
@@ -969,7 +966,7 @@
     });
 
     var empOpts = '<option value="">Visi darbuotojai</option><option value="pool"' + (f.emp === "pool" ? " selected" : "") + ">Tik nepriskirtos veiklos</option>" +
-      activeEmployees().map(function (e) {
+      visibleEmps().map(function (e) {
         return '<option value="' + e.id + '"' + (f.emp === e.id ? " selected" : "") + ">" + esc(e.vardas) + "</option>";
       }).join("");
 
@@ -1038,7 +1035,7 @@
 
     var html = '<div class="view-title"><h1>Tvarkaraštis</h1><div class="actions">' +
       (isAdmin() && S.schedMode === "week" ? '<button class="btn-outline" data-action="copy-week">Kopijuoti praėjusią savaitę</button>' : "") +
-      (isAdmin() ? '<button class="btn btn-task" data-action="new-task"' + empAttr + ">+ Naujas darbas</button>" : "") +
+      '<button class="btn btn-task" data-action="new-task"' + empAttr + ">+ Naujas darbas</button>" +
       '<button class="btn" data-action="new-shift"' + empAttr + ">+ Naujas įrašas</button>" +
     "</div></div>";
 
@@ -1486,27 +1483,6 @@
 
   // ---------- Modalai ----------
 
-  function settingsModal() {
-    if (!isAdmin()) return;
-    if (API.getCaps && !API.getCaps().lists) {
-      openModal("<h2>Nustatymai</h2><div class=\"hint\">Reikia duomenų bazės atnaujinimo. Administratorius: Supabase SQL Editor paleiskite <b>atnaujinimas-6.sql</b>.</div><div class=\"modal-actions\"><button type=\"button\" class=\"btn\" data-action=\"close-modal\">Uždaryti</button></div>");
-      return;
-    }
-    var html = "<h2>Nustatymai — sąrašai</h2><div class=\"hint\" style=\"margin-bottom:12px\">Pridėk ar šalink reikšmes — jos naudojamos išskleidžiamuose sąrašuose (tvarkaraščio veiklos tipas, darbų kategorijos, nedarbo tipai, vietos, mokyklos).</div>";
-    ["veiklos_tipas", "kategorija", "nedarbo_tipas", "vieta", "mokykla"].forEach(function (g) {
-      var vals = (S.sarasai || []).filter(function (x) { return x.grupe === g; })
-        .sort(function (a, b) { return (a.tvarka - b.tvarka) || (a.reiksme < b.reiksme ? -1 : 1); });
-      html += '<div class="set-group"><div class="section-label">' + esc(SARASAI_LABELS[g]) + "</div>" +
-        '<div class="set-chips">' + (vals.length ? vals.map(function (x) {
-          return '<span class="set-chip">' + esc(x.reiksme) + '<button type="button" class="set-x" data-action="set-del" data-id="' + x.id + '" title="Šalinti">×</button></span>';
-        }).join("") : '<span class="hint">Tuščia</span>') + "</div>" +
-        '<div class="set-add"><input type="text" class="set-input" data-grupe="' + g + '" placeholder="Pridėti naują…" maxlength="60"><button type="button" class="btn-outline btn-sm" data-action="set-add" data-grupe="' + g + '">+ Pridėti</button></div>' +
-      "</div>";
-    });
-    html += '<div class="modal-actions"><button type="button" class="btn" data-action="close-modal">Uždaryti</button></div>';
-    openModal(html);
-  }
-
   function openModal(innerHtml) {
     closeModal();
     var ov = document.createElement("div");
@@ -1559,7 +1535,9 @@
         '<div class="form-row"><label>Pavadinimas *</label><input type="text" name="pavadinimas" required maxlength="200" value="' + esc(t.pavadinimas) + '"></div>' +
         '<div class="form-row"><label>Kam priskirta</label>' +
           (isNew
-            ? assigneePickerHtml() + '<div class="hint" style="margin-top:5px">Pažymėk vieną ar kelis. Nepažymėjus — bendra (nepriskirta) veikla.</div>'
+            ? (manageableEmps().length > 1
+                ? assigneePickerHtml() + '<div class="hint" style="margin-top:5px">Pažymėk vieną ar kelis. ' + (isAdmin() ? "Nepažymėjus — bendra (nepriskirta) veikla." : "Nepažymėjus — priskirta tau.") + "</div>"
+                : '<div class="hint" style="margin-top:2px">Darbas bus priskirtas tau.</div>')
             : '<select name="darbuotojas_id">' + empSelectOptions(t.darbuotojas_id, isAdmin(), false) + "</select>") +
         "</div>" +
         '<div class="form-grid">' +
@@ -1621,6 +1599,8 @@
       // Naujas darbas — gali būti priskirtas vienam ar keliems (po kopiją kiekvienam)
       if (isNew) {
         var ids = assignSel.slice();
+        // Ne-administratorius negali kurti bendros (pool) veiklos — neparinkus, darbas priskiriamas sau.
+        if (!isAdmin() && ids.length === 0 && S.me) ids = [S.me.id];
         if (ids.length <= 1) {
           obj.darbuotojas_id = ids[0] || null;
           if (await mutate(API.addTask(obj), "Darbas išsaugotas")) {
@@ -3023,7 +3003,7 @@
         if (!(S.realMe && S.realMe.role === "admin")) break;
         S.viewAsId = id;
         S.roleAs = null;
-        S.schedEmp = "";
+        resetViewState();
         resolveMe();
         S.view = "apzvalga";
         render();
@@ -3031,7 +3011,7 @@
         break;
       case "view-as-exit":
         S.viewAsId = null;
-        S.schedEmp = "";
+        resetViewState();
         resolveMe();
         S.view = "apzvalga";
         render();
@@ -3044,7 +3024,7 @@
         if (!canSwitchRole()) { closeModal(); break; }
         S.roleAs = (el.getAttribute("data-role") === "darbuotojas") ? "darbuotojas" : null;
         S.viewAsId = null;
-        S.schedEmp = "";
+        resetViewState();
         if (!isAdmin() && (S.view === "nustatymai")) S.view = "apzvalga";
         closeModal();
         S.viewChanged = true;
@@ -3054,7 +3034,7 @@
       }
       case "role-back":
         S.roleAs = null;
-        S.schedEmp = "";
+        resetViewState();
         S.viewChanged = true;
         render();
         window.scrollTo(0, 0);
@@ -3199,7 +3179,7 @@
     } else if (what === "switch-view-as") {
       if (!(S.realMe && S.realMe.role === "admin")) { render(); return; }
       S.viewAsId = el.value;
-      S.schedEmp = "";
+      resetViewState();
       resolveMe();
       S.view = "apzvalga";
       render();
