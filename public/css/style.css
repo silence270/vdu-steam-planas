@@ -187,6 +187,9 @@ input, select, textarea { font: inherit; color: var(--text); }
 .task-row .t-title.done { text-decoration: line-through; color: var(--muted); }
 .task-row .t-meta { font-size: 12.5px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
 .task-row .t-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 760px) {
+  .task-row .t-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+}
 .overdue { color: var(--red); font-weight: 600; }
 
 select.status-select {

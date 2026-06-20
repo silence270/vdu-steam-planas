@@ -428,22 +428,23 @@
     return myNotifs().filter(function (n) { return !n.perskaityta; }).length;
   }
 
+  function notifyFail(e) { try { console.warn("Pranešimo siuntimas nepavyko", e); } catch (x) {} }
   function notifyUser(empId, tekstas, vaizdas) {
-    if (!empId || (S.me && empId === S.me.id)) return;
-    API.addNotifications([{ darbuotojas_id: empId, tekstas: tekstas, vaizdas: vaizdas || "darbai" }]).catch(function () {});
+    if (!empId || (S.me && empId === S.me.id) || !getEmp(empId)) return;
+    API.addNotifications([{ darbuotojas_id: empId, tekstas: tekstas, vaizdas: vaizdas || "darbai" }]).catch(notifyFail);
   }
   function notifyAdmins(tekstas, vaizdas) {
     var list = activeEmployees()
       .filter(function (e) { return e.role === "admin" && (!S.me || e.id !== S.me.id); })
       .map(function (e) { return { darbuotojas_id: e.id, tekstas: tekstas, vaizdas: vaizdas || "darbai" }; });
-    API.addNotifications(list).catch(function () {});
+    if (list.length) API.addNotifications(list).catch(notifyFail);
   }
   // Pranešimas visai aktyviai komandai (išskyrus save).
   function notifyEveryone(tekstas, vaizdas, exceptId) {
     var list = activeEmployees()
       .filter(function (e) { return (!S.me || e.id !== S.me.id) && e.id !== exceptId; })
       .map(function (e) { return { darbuotojas_id: e.id, tekstas: tekstas, vaizdas: vaizdas || "darbai" }; });
-    if (list.length) API.addNotifications(list).catch(function () {});
+    if (list.length) API.addNotifications(list).catch(notifyFail);
   }
 
   // ---------- Telefono push prenumerata ----------
@@ -1658,7 +1659,7 @@
     renderAssignChips();
     var del = ov.querySelector("#task-del");
     if (del) del.addEventListener("click", async function () {
-      if (!confirm("Tikrai ištrinti šį darbą?")) return;
+      if (!confirm("Tikrai ištrinti darbą „" + (task.pavadinimas || "") + "“?")) return;
       if (await mutate(API.deleteTask(task.id), "Darbas ištrintas")) closeModal();
     });
     var komSend = ov.querySelector("#kom-send");
@@ -1934,7 +1935,7 @@
     });
     var del = ov.querySelector("#shift-del");
     if (del) del.addEventListener("click", async function () {
-      if (!confirm("Tikrai ištrinti šį įrašą?")) return;
+      if (!confirm("Tikrai ištrinti įrašą " + (shift.data || "") + " " + (shift.nuo || "") + "–" + (shift.iki || "") + "?")) return;
       if (await mutate(API.deleteShift(shift.id), "Įrašas ištrintas")) closeModal();
     });
   }
@@ -2105,6 +2106,30 @@
 
   // ---------- Ataskaita ir importas ----------
 
+  // ---------- Excel pagalbininkai ----------
+  function hm2min(s) { var p = String(s || "").split(":"); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
+  function shiftHours(nuo, iki) { var m = hm2min(iki) - hm2min(nuo); if (m < 0) m = 0; return Math.round(m / 60 * 10) / 10; }
+  function xlsxStamp() { var n = new Date(); return todayIso() + " " + String(n.getHours()).padStart(2, "0") + String(n.getMinutes()).padStart(2, "0"); }
+  // Lapas su stulpelių pločiais (wch), autofiltru ir skaičių formatu (0.0) nurodytuose stulpeliuose.
+  function xlsxSheet(rows, widths, numCols) {
+    var ws = XLSX.utils.json_to_sheet(rows);
+    if (widths) ws["!cols"] = widths.map(function (w) { return { wch: w }; });
+    var ref = ws["!ref"];
+    if (ref) {
+      ws["!autofilter"] = { ref: ref };
+      if (numCols) {
+        var range = XLSX.utils.decode_range(ref);
+        numCols.forEach(function (ci) {
+          for (var r = 1; r <= range.e.r; r++) {
+            var cell = ws[XLSX.utils.encode_cell({ r: r, c: ci })];
+            if (cell && cell.t === "n") cell.z = "0.0";
+          }
+        });
+      }
+    }
+    return ws;
+  }
+
   function reportModal() {
     var opts = [];
     var now = new Date();
@@ -2132,12 +2157,21 @@
         "Darbas": t.pavadinimas,
         "Darbuotojas": emp ? emp.vardas : "—",
         "Kategorija": t.kategorija || "",
+        "Kabinetas": t.kabinetas || "",
+        "Mokykla": t.mokykla || "",
+        "Mokinių sk.": (t.mokiniu_skaicius != null ? t.mokiniu_skaicius : ""),
         "Valandos": Number(t.valandos) || 0,
+        "Prioritetas": PRIO[t.prioritetas] || t.prioritetas,
         "Atlikta": String(t.atlikta_at).slice(0, 10)
       };
     });
-    if (!doneRows.length) doneRows = [{ "Darbas": "Šį mėnesį atliktų darbų nėra", "Darbuotojas": "", "Kategorija": "", "Valandos": "", "Atlikta": "" }];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(doneRows), "Atlikti darbai");
+    if (doneRows.length) {
+      var dTot = doneRows.reduce(function (a, r) { return a + (Number(r["Valandos"]) || 0); }, 0);
+      doneRows.push({ "Darbas": "IŠ VISO", "Valandos": Math.round(dTot * 10) / 10 });
+    } else {
+      doneRows = [{ "Darbas": "Šį mėnesį atliktų darbų nėra", "Darbuotojas": "", "Kategorija": "", "Kabinetas": "", "Mokykla": "", "Mokinių sk.": "", "Valandos": "", "Prioritetas": "", "Atlikta": "" }];
+    }
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(doneRows, [30, 18, 15, 14, 18, 11, 10, 12, 12], [6]), "Atlikti darbai");
     // Suvestinė pagal kategoriją
     var katMap = {};
     done.forEach(function (t) {
@@ -2146,10 +2180,14 @@
       katMap[k].n++;
       katMap[k].h += Number(t.valandos) || 0;
     });
-    var katRows = Object.keys(katMap).map(function (k) {
-      return { "Kategorija": k, "Darbų": katMap[k].n, "Valandos": Math.round(katMap[k].h * 10) / 10 };
-    });
-    if (katRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(katRows), "Pagal kategoriją");
+    var katKeys = Object.keys(katMap);
+    if (katKeys.length) {
+      var katRows = katKeys.map(function (k) {
+        return { "Kategorija": k, "Darbų": katMap[k].n, "Valandos": Math.round(katMap[k].h * 10) / 10 };
+      });
+      katRows.push({ "Kategorija": "IŠ VISO", "Darbų": katRows.reduce(function (a, r) { return a + r["Darbų"]; }, 0), "Valandos": Math.round(katRows.reduce(function (a, r) { return a + r["Valandos"]; }, 0) * 10) / 10 });
+      XLSX.utils.book_append_sheet(wb, xlsxSheet(katRows, [22, 10, 10], [2]), "Pagal kategoriją");
+    }
     var sumRows = activeEmployees().map(function (e) {
       var mine = done.filter(function (t) { return t.darbuotojas_id === e.id; });
       var hrs = mine.reduce(function (a, t) { return a + (Number(t.valandos) || 0); }, 0);
@@ -2160,14 +2198,15 @@
         "Dabartinė užkrova (%)": loadOf(e.id).pct
       };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sumRows), "Suvestinė");
+    sumRows.push({ "Vardas": "IŠ VISO", "Atlikta darbų": sumRows.reduce(function (a, r) { return a + r["Atlikta darbų"]; }, 0), "Atliktos valandos": Math.round(sumRows.reduce(function (a, r) { return a + r["Atliktos valandos"]; }, 0) * 10) / 10, "Dabartinė užkrova (%)": "" });
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(sumRows, [18, 12, 15, 18], [2]), "Suvestinė");
     var vacRows = S.vacations.filter(function (v) {
       return String(v.nuo).slice(0, 7) <= month && month <= String(v.iki).slice(0, 7);
     }).map(function (v) {
       var emp = getEmp(v.darbuotojas_id);
       return { "Vardas": emp ? emp.vardas : "?", "Tipas": vacLabel(v.tipas), "Nuo": v.nuo, "Iki": v.iki, "Pastaba": v.pastaba || "" };
     });
-    if (vacRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(vacRows), "Atostogos");
+    if (vacRows.length) XLSX.utils.book_append_sheet(wb, xlsxSheet(vacRows, [18, 15, 12, 12, 25]), "Atostogos");
     XLSX.writeFile(wb, "Ataskaita " + month + ".xlsx");
     toast("Ataskaita parsisiųsta");
   }
@@ -2200,7 +2239,7 @@
     if (dSheet) {
       XLSX.utils.sheet_to_json(dSheet).forEach(function (r) {
         var title = String(r["Pavadinimas"] || r["Darbas"] || "").trim();
-        if (!title) return;
+        if (!title || deacc(title) === "is viso") return;
         var who = String(r["Darbuotojas"] || "").trim();
         var empId = null;
         if (who && deacc(who) !== "nepriskirta") {
@@ -2222,6 +2261,7 @@
     var tSheet = wb.Sheets["Tvarkarastis"] || wb.Sheets["Tvarkaraštis"];
     if (tSheet) {
       XLSX.utils.sheet_to_json(tSheet).forEach(function (r) {
+        if (deacc(String(r["Data"] || "")) === "is viso") return;
         var who = String(r["Darbuotojas"] || "").trim();
         var empId = empByName[deacc(who)];
         var data = impDate(r["Data"]);
@@ -2400,22 +2440,38 @@
     }
     var wb = XLSX.utils.book_new();
 
-    var tasksRows = S.tasks.map(function (t) {
+    // Darbai — aktyvūs pirma, tada pagal terminą
+    var tSorted = S.tasks.slice().sort(function (a, b) {
+      var da = a.statusas === "atlikta" ? 1 : 0, db = b.statusas === "atlikta" ? 1 : 0;
+      if (da !== db) return da - db;
+      var ta = a.terminas || "9999-12-31", tb = b.terminas || "9999-12-31";
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+    var tasksRows = tSorted.map(function (t) {
       var emp = t.darbuotojas_id ? getEmp(t.darbuotojas_id) : null;
       return {
         "Pavadinimas": t.pavadinimas,
         "Darbuotojas": emp ? emp.vardas : "Nepriskirta",
         "Valandos": Number(t.valandos) || 0,
         "Terminas": t.terminas || "",
+        "Laikas": tLaikas(t),
         "Kategorija": t.kategorija || "",
+        "Kabinetas": t.kabinetas || "",
+        "Mokykla": t.mokykla || "",
+        "Mokinių sk.": (t.mokiniu_skaicius != null ? t.mokiniu_skaicius : ""),
         "Prioritetas": PRIO[t.prioritetas] || t.prioritetas,
         "Statusas": STATUS[t.statusas] || t.statusas,
         "Aprašymas": t.aprasymas || ""
       };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tasksRows), "Darbai");
+    if (tasksRows.length) {
+      var tTot = tasksRows.reduce(function (a, r) { return a + (Number(r["Valandos"]) || 0); }, 0);
+      tasksRows.push({ "Pavadinimas": "IŠ VISO", "Valandos": Math.round(tTot * 10) / 10 });
+    }
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(tasksRows, [36, 18, 10, 12, 8, 15, 15, 18, 11, 12, 12, 40], [2]), "Darbai");
 
-    var shiftRows = S.shifts.slice().sort(function (a, b) { return a.data < b.data ? -1 : 1; }).map(function (s) {
+    // Tvarkaraštis — su trukme ir metaduomenimis
+    var shiftRows = S.shifts.slice().sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : (a.nuo < b.nuo ? -1 : 1); }).map(function (s) {
       var emp = getEmp(s.darbuotojas_id);
       var d = dateFromIso(s.data);
       return {
@@ -2424,28 +2480,68 @@
         "Darbuotojas": emp ? emp.vardas : "",
         "Nuo": s.nuo,
         "Iki": s.iki,
+        "Trukmė (h)": shiftHours(s.nuo, s.iki),
+        "Tipas": s.tipas || "",
+        "Vieta": s.vieta || "",
+        "Mokykla": s.mokykla || "",
+        "Mokinių sk.": (s.mokiniu_skaicius != null ? s.mokiniu_skaicius : ""),
         "Pastaba": s.pastaba || ""
       };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shiftRows), "Tvarkarastis");
+    if (shiftRows.length) {
+      var sTot = shiftRows.reduce(function (a, r) { return a + (Number(r["Trukmė (h)"]) || 0); }, 0);
+      shiftRows.push({ "Data": "IŠ VISO", "Trukmė (h)": Math.round(sTot * 10) / 10 });
+    }
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(shiftRows, [12, 12, 18, 8, 8, 11, 15, 15, 18, 11, 25], [5]), "Tvarkaraštis");
 
+    // Komanda
     var teamRows = S.employees.map(function (e) {
       var l = loadOf(e.id);
+      var kur = e.kuratorius_id ? getEmp(e.kuratorius_id) : null;
       return {
         "Vardas": e.vardas,
         "Pareigos": e.pareigos || "",
         "El. paštas": e.email || "",
         "Rolė": e.role === "admin" ? "Administratorius" : e.role === "vadovas" ? "Vadovas" : "Darbuotojas",
-        "Val. per savaitę": Number(e.savaites_valandos) || 40,
+        "Etatas": etatoStr(Number(e.savaites_valandos) || 40),
+        "Val./sav.": Number(e.savaites_valandos) || 40,
         "Užkrova (val.)": l.hours,
         "Užkrova (%)": l.pct,
+        "Kuratorius": kur ? kur.vardas : "",
         "Atsakomybės": e.atsakomybes || "",
         "Aktyvus": e.aktyvus ? "Taip" : "Ne"
       };
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(teamRows), "Komanda");
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(teamRows, [18, 18, 25, 16, 9, 9, 14, 12, 18, 30, 10], [6]), "Komanda");
 
-    XLSX.writeFile(wb, "VDU STEAM planas " + todayIso() + ".xlsx");
+    // Suvestinė — užimtumo apžvalga vienoje vietoje
+    var sumRows = activeEmployees().map(function (e) {
+      var act = S.tasks.filter(function (t) { return t.darbuotojas_id === e.id && t.statusas !== "atlikta"; });
+      var actH = act.reduce(function (a, t) { return a + (Number(t.valandos) || 0); }, 0);
+      var doneN = S.tasks.filter(function (t) { return t.darbuotojas_id === e.id && t.statusas === "atlikta"; }).length;
+      var shN = S.shifts.filter(function (s) { return s.darbuotojas_id === e.id; }).length;
+      return {
+        "Vardas": e.vardas,
+        "Aktyvūs darbai": act.length,
+        "Aktyvios val.": Math.round(actH * 10) / 10,
+        "Atlikta (iš viso)": doneN,
+        "Tvarkaraščio įrašų": shN,
+        "Užkrova (%)": loadOf(e.id).pct
+      };
+    });
+    if (sumRows.length) {
+      sumRows.push({
+        "Vardas": "IŠ VISO",
+        "Aktyvūs darbai": sumRows.reduce(function (a, r) { return a + r["Aktyvūs darbai"]; }, 0),
+        "Aktyvios val.": Math.round(sumRows.reduce(function (a, r) { return a + r["Aktyvios val."]; }, 0) * 10) / 10,
+        "Atlikta (iš viso)": sumRows.reduce(function (a, r) { return a + r["Atlikta (iš viso)"]; }, 0),
+        "Tvarkaraščio įrašų": sumRows.reduce(function (a, r) { return a + r["Tvarkaraščio įrašų"]; }, 0),
+        "Užkrova (%)": ""
+      });
+    }
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(sumRows, [18, 14, 13, 15, 16, 12], [2]), "Suvestinė");
+
+    XLSX.writeFile(wb, "VDU STEAM planas " + xlsxStamp() + ".xlsx");
     toast("Excel failas parsisiųstas");
   }
 
@@ -2782,10 +2878,12 @@
       }
       case "mlist-del": {
         var mf2 = el.getAttribute("data-filter");
-        if (!confirm("Tikrai ištrinti šį darbą?")) break;
+        var mdt = S.tasks.find(function (x) { return x.id === id; });
+        if (!confirm("Tikrai ištrinti darbą „" + ((mdt && mdt.pavadinimas) || "") + "“?")) break;
         mutate(API.deleteTask(id), "Ištrinta").then(function (ok) { if (ok) metricListModal(mf2); });
         break;
       }
+
       case "mlist-new":
         if (!isManager()) break;
         taskModal(null, {});
@@ -2957,7 +3055,7 @@
         var sval = sinp ? String(sinp.value || "").trim() : "";
         if (!sval) break;
         var ex = (S.sarasai || []).filter(function (x) { return x.grupe === sg; });
-        if (ex.some(function (x) { return String(x.reiksme).toLowerCase() === sval.toLowerCase(); })) { toast("Tokia reikšmė jau yra."); break; }
+        if (ex.some(function (x) { return String(x.reiksme).toLowerCase() === sval.toLowerCase(); })) { toast("Tokia reikšmė jau yra."); if (sinp) { sinp.value = ""; sinp.focus(); } break; }
         mutate(API.addListItem({ grupe: sg, reiksme: sval, tvarka: ex.length + 1 }), "Pridėta");
         break;
       }
