@@ -244,6 +244,7 @@ select.status-select.st-atlikta { color: var(--green); background: var(--green-s
   word-break: break-word;
 }
 .shift-pill small { display: block; font-weight: 400; opacity: 0.9; }
+.shift-pill.pub-pill { outline: 1.5px dashed rgba(255, 255, 255, 0.7); outline-offset: -3px; }
 .cell-add {
   width: 100%; border: none; background: transparent; color: #B6BAC5;
   border-radius: 7px; padding: 2px 0; font-size: 14px; font-weight: 700;

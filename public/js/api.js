@@ -15,7 +15,7 @@ window.API = (function () {
   // Ar duomenų bazėje jau yra naujesni stulpeliai/lentelės (atnaujinimas-1.sql).
   // Optimistiškai true; fetchAll patikslina. Jei dar ne — appsas nemeta klaidų,
   // tik tų funkcijų neleidžia, kol adminas paleidžia atnaujinimą.
-  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true, lists: true, mokykla: true, kabinetas: true };
+  var caps = { taskExtras: true, extraTables: true, availability: true, curator: true, taskTime: true, lists: true, mokykla: true, kabinetas: true, viesas: true };
 
   var DEMO_KEY = "steamPlanas.demo.v1";
   var DEMO_USER_KEY = "steamPlanas.demoUser";
@@ -317,6 +317,8 @@ window.API = (function () {
       caps.mokykla = !mkProbe[0].error && !mkProbe[1].error;
       var kabProbe = await sb.from("uzduotys").select("kabinetas").limit(1);
       caps.kabinetas = !kabProbe.error;
+      var viesProbe = await sb.from("tvarkarastis").select("viesas").limit(1);
+      caps.viesas = !viesProbe.error;
       function trimT(rows) {
         return (rows || []).map(function (r) {
           if (r.nuo != null) r.nuo = String(r.nuo).slice(0, 5);
@@ -338,7 +340,7 @@ window.API = (function () {
         availTemplate: trimT(avail[0].data),
         availability: trimT(avail[1].data),
         sarasai: listsRes.data || [],
-        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime || !caps.lists || !caps.mokykla || !caps.kabinetas
+        migrationNeeded: migrationNeeded || !caps.taskExtras || !caps.availability || !caps.taskTime || !caps.lists || !caps.mokykla || !caps.kabinetas || !caps.viesas
       };
     }
     caps.taskExtras = true;
@@ -384,6 +386,7 @@ window.API = (function () {
     var drop = {};
     if (!caps.lists) { drop.tipas = 1; drop.vieta = 1; }
     if (!caps.mokykla) { drop.mokykla = 1; drop.mokiniu_skaicius = 1; }
+    if (!caps.viesas) { drop.viesas = 1; }
     var has = false;
     for (var d in drop) { if (drop[d]) { has = true; break; } }
     if (!has) return obj;
@@ -740,7 +743,7 @@ window.API = (function () {
     clearAvailTemplateForWeekday: clearAvailTemplateForWeekday,
     addListItem: addListItem,
     deleteListItem: deleteListItem,
-    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability, curator: caps.curator, taskTime: caps.taskTime, lists: caps.lists, mokykla: caps.mokykla }; },
+    getCaps: function () { return { taskExtras: caps.taskExtras, extraTables: caps.extraTables, availability: caps.availability, curator: caps.curator, taskTime: caps.taskTime, lists: caps.lists, mokykla: caps.mokykla, kabinetas: caps.kabinetas, viesas: caps.viesas }; },
     subscribe: subscribe
   };
 })();

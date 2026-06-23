@@ -341,6 +341,10 @@
   function canEditShift(s) {
     return isAdmin() || (S.me && (s.darbuotojas_id === S.me.id || managesEmp(s.darbuotojas_id)));
   }
+  // Ar vartotojas MATO šį įrašą: vadovas/savininkas/kuratorius — visada; arba pažymėtą „viešas".
+  function canSeeShift(s) {
+    return isManager() || canManageEmp(s.darbuotojas_id) || !!s.viesas;
+  }
 
   // Užkrova. Be opts — visų aktyvių darbų suma vs savaitės valandos (kaip anksčiau).
   // Su opts.mode "savaite"/"menuo" — tik to laikotarpio terminų darbai (+ be termino), talpa pagal laikotarpį.
@@ -1098,6 +1102,16 @@
       return html + monthGridHtml();
     }
 
+    // Vieši kitų darbuotojų įrašai — rodomi visiems kaip atskiros (ribotos) eilutės.
+    if (!isManager()) {
+      var inRows = {}; emps.forEach(function (e) { inRows[e.id] = true; });
+      var weekSet = {}; days.forEach(function (d) { weekSet[isoFromDate(d)] = true; });
+      var pubOwn = {};
+      S.shifts.forEach(function (sh) { if (sh.viesas && !inRows[sh.darbuotojas_id] && weekSet[sh.data]) pubOwn[sh.darbuotojas_id] = true; });
+      var extraRows = activeEmployees().filter(function (e) { return pubOwn[e.id]; });
+      if (extraRows.length) emps = emps.concat(extraRows);
+    }
+
     // Stalo vaizdas (kompiuteriui)
     var thead = "<tr><th style='width:150px'>Darbuotojas</th>" + days.map(function (d, idx) {
       var dIso = isoFromDate(d);
@@ -1106,25 +1120,26 @@
 
     var tbody = emps.map(function (e) {
       var canRow = canManageEmp(e.id);
+      var showFull = isManager() || canRow; // ar matom visą šio žmogaus eilutę (ne tik viešus įrašus)
       var cells = days.map(function (d) {
         var dIso = isoFromDate(d);
-        var vac = vacationOf(e.id, dIso);
+        var vac = showFull ? vacationOf(e.id, dIso) : null;
         var vacHtml = vac ? '<span class="shift-pill vac-pill"' +
           (canRow ? ' data-action="open-vacations" data-id="' + e.id + '"' : "") + ">" +
           vacLabel(vac.tipas) + "</span>" : "";
-        var items = shiftsFor(e.id, dIso).map(function (s) {
+        var items = shiftsFor(e.id, dIso).filter(canSeeShift).map(function (s) {
           var canS = canEditShift(s);
-          return '<span class="shift-pill" style="background:' + esc(e.spalva || "#5B5BD6") + '"' +
-            (canS ? ' data-action="open-shift" data-id="' + s.id + '"' : "") + ">" +
+          return '<span class="shift-pill' + (s.viesas ? " pub-pill" : "") + '" style="background:' + esc(e.spalva || "#5B5BD6") + '"' +
+            (canS ? ' data-action="open-shift" data-id="' + s.id + '"' : "") + (s.viesas ? ' title="Matomas visiems"' : "") + ">" +
             esc(s.nuo) + "–" + esc(s.iki) +
             (s.tipas || s.vieta ? "<small>" + esc([s.tipas, s.vieta].filter(Boolean).join(" · ")) + "</small>" : "") +
             (s.pastaba ? "<small>" + esc(s.pastaba) + "</small>" : "") +
           "</span>";
         }).join("");
-        var tItems = tasksDueOn(e.id, dIso).map(function (t) {
+        var tItems = showFull ? tasksDueOn(e.id, dIso).map(function (t) {
           return '<span class="task-pill prio-' + esc(t.prioritetas) + '" data-action="open-task" data-id="' + t.id + '" title="Darbo terminas">⚑ ' + (tLaikas(t) ? esc(tLaikas(t)) + " " : "") + esc(t.pavadinimas) + "</span>";
-        }).join("");
-        var negHtml = (!vac && resolveAvail(e.id, dIso, ((d.getDay() + 6) % 7) + 1).nedirba) ? '<span class="shift-pill neg-pill">Negaliu</span>' : "";
+        }).join("") : "";
+        var negHtml = (showFull && !vac && resolveAvail(e.id, dIso, ((d.getDay() + 6) % 7) + 1).nedirba) ? '<span class="shift-pill neg-pill">Negaliu</span>' : "";
         var add = (canRow && !vac) ? '<button class="cell-add" data-action="new-shift" data-emp="' + e.id + '" data-date="' + dIso + '" title="Pridėti">+</button>' : "";
         return "<td class='" + (dIso === today ? "today" : "") + "'>" + vacHtml + negHtml + items + tItems + add + "</td>";
       }).join("");
@@ -1144,25 +1159,25 @@
     var selIso = isoFromDate(days[S.selDay]);
     var visSet = {};
     emps.forEach(function (e) { visSet[e.id] = true; });
-    var dayShifts = S.shifts.filter(function (s) { return s.data === selIso && visSet[s.darbuotojas_id]; })
+    var dayShifts = S.shifts.filter(function (s) { return s.data === selIso && visSet[s.darbuotojas_id] && canSeeShift(s); })
       .sort(function (a, b) { return a.nuo < b.nuo ? -1 : 1; });
     var dayList = dayShifts.length ? dayShifts.map(function (s) {
       var e = getEmp(s.darbuotojas_id);
       var canS = canEditShift(s);
       return '<div class="task-row">' + avatarHtml(e) +
-        '<div class="t-main"><div class="t-title">' + esc(e ? e.vardas : "?") + "</div>" +
+        '<div class="t-main"><div class="t-title">' + esc(e ? e.vardas : "?") + (s.viesas ? ' <span class="chip chip-blue">visiems</span>' : "") + "</div>" +
           '<div class="t-meta"><span>' + esc(s.nuo) + "–" + esc(s.iki) + "</span>" + (s.tipas ? "<span>" + esc(s.tipas) + "</span>" : "") + (s.vieta ? "<span>" + esc(s.vieta) + "</span>" : "") + (s.pastaba ? "<span>" + esc(s.pastaba) + "</span>" : "") + "</div>" +
         "</div>" +
         (canS ? '<button class="btn-ghost btn-sm" data-action="open-shift" data-id="' + s.id + '">Keisti</button>' : "") +
       "</div>";
     }).join("") : '<div class="empty">' + DAYS_LONG[S.selDay] + " — įrašų nėra.</div>";
 
-    var vacToday = emps.filter(function (e) { return vacationOf(e.id, selIso); });
+    var vacToday = emps.filter(function (e) { return (isManager() || canManageEmp(e.id)) && vacationOf(e.id, selIso); });
     var vacLine = vacToday.length
       ? '<div class="hint" style="margin-bottom:8px">Nedirba: ' + vacToday.map(function (e) { return esc(e.vardas); }).join(", ") + "</div>"
       : "";
     var selWd = ((days[S.selDay].getDay() + 6) % 7) + 1;
-    var negToday = emps.filter(function (e) { return !vacationOf(e.id, selIso) && resolveAvail(e.id, selIso, selWd).nedirba; });
+    var negToday = emps.filter(function (e) { return (isManager() || canManageEmp(e.id)) && !vacationOf(e.id, selIso) && resolveAvail(e.id, selIso, selWd).nedirba; });
     var negLine = negToday.length
       ? '<div class="hint" style="margin-bottom:8px;color:var(--red)">Pasižymėjo „negaliu": ' + negToday.map(function (e) { return esc(e.vardas); }).join(", ") + "</div>"
       : "";
@@ -1211,7 +1226,7 @@
       for (var i = 0; i < 7; i++) {
         var dIso = isoFromDate(d);
         var inMonth = d.getMonth() === month;
-        var dayShifts = S.shifts.filter(function (s) { return s.data === dIso && visSet[s.darbuotojas_id]; });
+        var dayShifts = S.shifts.filter(function (s) { return s.data === dIso && (visSet[s.darbuotojas_id] || s.viesas); });
         var dots = dayShifts.slice(0, 8).map(function (s) {
           var e = getEmp(s.darbuotojas_id);
           return '<span class="m-dot" title="' + esc(e ? e.vardas : "") + '" style="background:' + esc(e ? e.spalva : "#999") + '"></span>';
@@ -1903,6 +1918,7 @@
     var canPickMany = isNew && pickerEmps.length > 1;
     var soloId = pickerEmps.length === 1 ? pickerEmps[0].id : ((presetEmp && canManageEmp(presetEmp)) ? presetEmp : (S.me ? S.me.id : ""));
     var seedIds = (presetEmp && canManageEmp(presetEmp)) ? [presetEmp] : [];
+    var capsVies = !!(((API.getCaps ? API.getCaps() : {}) || {}).viesas);
     var ov = openModal(
       "<h2>" + (isNew ? "Naujas tvarkaraščio įrašas" : "Įrašo redagavimas") + "</h2>" +
       '<form id="shift-form">' +
@@ -1925,6 +1941,7 @@
           mokiniaiRow(s.mokiniu_skaicius) +
         "</div>" + mokDatalist() +
         '<div class="form-row"><label>Pastaba</label><input type="text" name="pastaba" maxlength="120" value="' + esc(s.pastaba || "") + '" placeholder="pvz., papildoma info…"></div>' +
+        (capsVies ? '<div class="form-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="viesas" style="width:auto"' + (s.viesas ? " checked" : "") + "> Rodyti visiems <span class=\"hint\">(visa komanda matys šį įrašą; kitaip — tik darbuotojas ir vadovai)</span></label></div>" : "") +
         '<div class="form-error" id="shift-err"></div>' +
         '<div class="modal-actions">' +
           (!isNew && canEditShift(shift) ? '<button type="button" class="btn-ghost left" id="shift-del" style="color:var(--red)">Ištrinti</button>' : "") +
@@ -1946,7 +1963,8 @@
         vieta: fd.get("vieta") || "",
         mokykla: String(fd.get("mokykla") || "").trim(),
         mokiniu_skaicius: readMokiniai(fd),
-        pastaba: String(fd.get("pastaba") || "").trim()
+        pastaba: String(fd.get("pastaba") || "").trim(),
+        viesas: fd.get("viesas") === "on"
       };
       if (obj.iki <= obj.nuo) { errEl.textContent = "Pabaigos laikas turi būti vėlesnis už pradžios."; return; }
       if (obj.nuo < "07:00" || obj.iki > "19:00") { errEl.textContent = "Laikas leidžiamas tik 07:00–19:00."; return; }
