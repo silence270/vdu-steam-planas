@@ -1,6 +1,6 @@
 // Paprastas service worker: programos failai pasiekiami ir be ryšio,
 // bet pirmiausia visada bandoma gauti naujausią versiją iš tinklo.
-var CACHE = "steam-planas-v46";
+var CACHE = "steam-planas-v47";
 var ASSETS = [
   "./",
   "index.html",

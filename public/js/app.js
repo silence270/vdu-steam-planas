@@ -278,13 +278,40 @@
     return '<div class="form-row"><label>Kabinetas / vieta</label><input type="text" name="kabinetas" list="vietos-list" maxlength="80" value="' + esc(val || "") + '" placeholder="pasirink arba įrašyk…"></div>';
   }
   // Naujam darbui — pasirenki po vieną; pasirinkti tampa žymomis (kiekvienam sukuriama kopija).
-  function assigneePickerHtml() {
-    var emps = manageableEmps();
+  function assigneePickerHtml(emps) {
+    emps = emps || manageableEmps();
     return '<select id="assignee-add">' +
       '<option value="">+ pridėti darbuotoją…</option>' +
       emps.map(function (e) { return '<option value="' + e.id + '">' + esc(e.vardas) + "</option>"; }).join("") +
     "</select>" +
     '<div id="assignee-chips" class="assignee-chips"></div>';
+  }
+  // Sujungia #assignee-add + #assignee-chips į „pasirink po vieną → žymos" pickerį. Grąžina { get }.
+  function bindAssigneePicker(ov, initial) {
+    var sel = (initial || []).slice();
+    function renderChips() {
+      var box = ov.querySelector("#assignee-chips");
+      if (!box) return;
+      box.innerHTML = sel.map(function (eid) {
+        var e = getEmp(eid);
+        return '<span class="set-chip">' + esc(e ? e.vardas : eid) + '<button type="button" class="set-x" data-rm="' + eid + '" title="Pašalinti">×</button></span>';
+      }).join("");
+      Array.prototype.forEach.call(box.querySelectorAll("[data-rm]"), function (b) {
+        b.addEventListener("click", function () {
+          var rid = b.getAttribute("data-rm");
+          sel = sel.filter(function (x) { return x !== rid; });
+          renderChips();
+        });
+      });
+    }
+    var add = ov.querySelector("#assignee-add");
+    if (add) add.addEventListener("change", function () {
+      var v = add.value;
+      if (v && sel.indexOf(v) === -1) { sel.push(v); renderChips(); }
+      add.value = "";
+    });
+    renderChips();
+    return { get: function () { return sel.slice(); } };
   }
   function isAdmin() { return S.roleAs === "darbuotojas" ? false : !!(S.me && S.me.role === "admin"); }
   // Vadovas arba administratorius — mato komandos užkrovą, valdo daugiau.
@@ -570,7 +597,7 @@
   // ---------- bendras karkasas ----------
 
   // Versija (automatiškai iš ?v=) + paskutinio atnaujinimo data.
-  var APP_BUILD = "2026-06-21";
+  var APP_BUILD = "2026-06-23";
   function buildStamp() {
     var v = "";
     var s = document.querySelector('script[src*="app.js?v="]');
@@ -1868,13 +1895,21 @@
       data: presetDate || todayIso(),
       nuo: defStr("nuo", "08:00"), iki: defStr("iki", "17:00"), pastaba: ""
     };
+    // Naujam įrašui — galima pridėti kelis žmones (kiekvienam sukuriamas atskiras įrašas).
+    var pickerEmps = activeEmployees().filter(function (e) { return canManageEmp(e.id); });
+    var canPickMany = isNew && pickerEmps.length > 1;
+    var soloId = pickerEmps.length === 1 ? pickerEmps[0].id : ((presetEmp && canManageEmp(presetEmp)) ? presetEmp : (S.me ? S.me.id : ""));
+    var seedIds = (presetEmp && canManageEmp(presetEmp)) ? [presetEmp] : [];
     var ov = openModal(
       "<h2>" + (isNew ? "Naujas tvarkaraščio įrašas" : "Įrašo redagavimas") + "</h2>" +
       '<form id="shift-form">' +
-        '<div class="form-row"><label>Darbuotojas *</label><select name="darbuotojas_id" required>' +
-          (isAdmin() && !s.darbuotojas_id ? '<option value="">— Pasirinkite —</option>' : "") +
-          empSelectOptions(s.darbuotojas_id, false) +
-        "</select></div>" +
+        '<div class="form-row"><label>' + (canPickMany ? "Kam priskirti (vienam ar keliems)" : "Darbuotojas *") + "</label>" +
+          (canPickMany
+            ? assigneePickerHtml(pickerEmps) + '<div class="hint" style="margin-top:5px">Pažymėk vieną ar kelis — kiekvienam sukuriamas atskiras įrašas.</div>'
+            : (isNew
+                ? '<div class="hint" style="margin-top:2px">Įrašas bus priskirtas tau.</div>'
+                : '<select name="darbuotojas_id" required>' + (isAdmin() && !s.darbuotojas_id ? '<option value="">— Pasirinkite —</option>' : "") + empSelectOptions(s.darbuotojas_id, false) + "</select>")) +
+        "</div>" +
         '<div class="form-row"><label>Data *</label>' + datePickerHtml("data", s.data || todayIso()) + "</div>" +
         '<div class="form-grid">' +
           '<div class="form-row"><label>Nuo</label><input type="time" name="nuo" required min="07:00" max="19:00" value="' + esc(s.nuo) + '"></div>' +
@@ -1895,11 +1930,12 @@
         "</div>" +
       "</form>"
     );
+    var picker = canPickMany ? bindAssigneePicker(ov, seedIds) : null;
     ov.querySelector("#shift-form").addEventListener("submit", async function (ev) {
       ev.preventDefault();
       var fd = new FormData(ev.target);
+      var errEl = ov.querySelector("#shift-err");
       var obj = {
-        darbuotojas_id: fd.get("darbuotojas_id"),
         data: fd.get("data"),
         nuo: fd.get("nuo"),
         iki: fd.get("iki"),
@@ -1909,28 +1945,36 @@
         mokiniu_skaicius: readMokiniai(fd),
         pastaba: String(fd.get("pastaba") || "").trim()
       };
-      if (!obj.darbuotojas_id) {
-        ov.querySelector("#shift-err").textContent = "Pasirinkite darbuotoją.";
+      if (obj.iki <= obj.nuo) { errEl.textContent = "Pabaigos laikas turi būti vėlesnis už pradžios."; return; }
+      if (obj.nuo < "07:00" || obj.iki > "19:00") { errEl.textContent = "Laikas leidžiamas tik 07:00–19:00."; return; }
+
+      if (!isNew) {
+        // Redagavimas — vienas darbuotojas
+        var eid = fd.get("darbuotojas_id");
+        if (!eid) { errEl.textContent = "Pasirinkite darbuotoją."; return; }
+        if (!canManageEmp(eid)) { errEl.textContent = "Neturite teisės keisti šio darbuotojo tvarkaraščio."; return; }
+        obj.darbuotojas_id = eid;
+        if (await mutate(API.updateShift(shift.id, obj), "Pakeitimai išsaugoti")) closeModal();
         return;
       }
-      if (!canManageEmp(obj.darbuotojas_id)) {
-        ov.querySelector("#shift-err").textContent = "Neturite teisės keisti šio darbuotojo tvarkaraščio.";
-        return;
+
+      // Naujas įrašas — vienam ar keliems (kiekvienam atskira kopija)
+      var ids = (canPickMany ? picker.get() : [soloId]).filter(function (id) { return id && canManageEmp(id); });
+      if (!ids.length) { errEl.textContent = "Pasirinkite bent vieną darbuotoją."; return; }
+      var made = 0;
+      for (var i = 0; i < ids.length; i++) {
+        try {
+          await API.addShift(Object.assign({}, obj, { darbuotojas_id: ids[i] }));
+          notifyUser(ids[i], "Naujas tvarkaraščio įrašas: " + obj.data + " " + obj.nuo + "–" + obj.iki, "tvarkarastis");
+          made++;
+        } catch (e) {}
       }
-      if (obj.iki <= obj.nuo) {
-        ov.querySelector("#shift-err").textContent = "Pabaigos laikas turi būti vėlesnis už pradžios.";
-        return;
-      }
-      if (obj.nuo < "07:00" || obj.iki > "19:00") {
-        ov.querySelector("#shift-err").textContent = "Laikas leidžiamas tik 07:00–19:00.";
-        return;
-      }
-      var ok = isNew
-        ? await mutate(API.addShift(obj), "Įrašas išsaugotas")
-        : await mutate(API.updateShift(shift.id, obj), "Pakeitimai išsaugoti");
-      if (ok) {
-        if (isNew) notifyUser(obj.darbuotojas_id, "Naujas tvarkaraščio įrašas: " + obj.data + " " + obj.nuo + "–" + obj.iki, "tvarkarastis");
+      if (made) {
+        toast(made > 1 ? "Sukurta " + made + " įrašų" : "Įrašas išsaugotas");
         closeModal();
+        await refreshData();
+      } else {
+        errEl.textContent = "Nepavyko išsaugoti.";
       }
     });
     var del = ov.querySelector("#shift-del");
