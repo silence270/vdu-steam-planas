@@ -99,7 +99,8 @@
     tvarkarastis: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
     darbai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>',
     komanda: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6c2.5.3 4.4 1.9 5 4.4"/></svg>',
-    prieinamumas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3 2"/></svg>'
+    prieinamumas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3 2"/></svg>',
+    nustatymai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/></svg>'
   };
 
   var VIEWS = [
@@ -618,12 +619,14 @@
     var navBtns = VIEWS.map(function (v) {
       return '<button data-action="nav" data-view="' + v.id + '" class="' + (S.view === v.id ? "active" : "") + '">' + v.label + "</button>";
     }).join("");
-    if (isAdmin()) {
-      navBtns += '<button data-action="nav" data-view="nustatymai" class="' + (S.view === "nustatymai" ? "active" : "") + '">Nustatymai</button>';
-    }
+    // Nustatymai — adminui pilni; kitiems tik „Sąrašai" (gali pildyti).
+    navBtns += '<button data-action="nav" data-view="nustatymai" class="' + (S.view === "nustatymai" ? "active" : "") + '">' + (isAdmin() ? "Nustatymai" : "Sąrašai") + "</button>";
     var bottomBtns = VIEWS.map(function (v) {
       return '<button data-action="nav" data-view="' + v.id + '" class="' + (S.view === v.id ? "active" : "") + '">' + ICONS[v.id] + "<span>" + v.label + "</span></button>";
     }).join("");
+    if (!isAdmin()) {
+      bottomBtns += '<button data-action="nav" data-view="nustatymai" class="' + (S.view === "nustatymai" ? "active" : "") + '">' + ICONS.nustatymai + "<span>Sąrašai</span></button>";
+    }
     return '' +
       '<header class="topbar">' +
         '<div class="brand"><img src="icons/icon-192.png" alt=""><span>STEAM planas<small>VDU didaktikos centras</small></span></div>' +
@@ -2665,25 +2668,27 @@
   }
 
   function viewNustatymai() {
-    if (!isAdmin()) return '<div class="card"><div class="empty">Prieiga tik administratoriams.</div></div>';
+    var admin = isAdmin();
     var caps = (API.getCaps ? API.getCaps() : {}) || {};
+    var ttl = admin ? "Nustatymai" : "Sąrašai";
     if (!caps.lists) {
-      return '<div class="view-title"><h1>Nustatymai</h1></div><div class="card"><b>Reikia duomenų bazės atnaujinimo.</b><div class="hint">Supabase SQL Editor paleiskite atnaujinimas-6.sql.</div></div>';
+      return '<div class="view-title"><h1>' + ttl + '</h1></div><div class="card"><b>Reikia duomenų bazės atnaujinimo.</b><div class="hint">' + (admin ? "Supabase SQL Editor paleiskite atnaujinimas-6.sql." : "Kreipkitės į administratorių.") + "</div></div>";
     }
-    var html = '<div class="view-title"><h1>Nustatymai</h1><span class="hint">tik administratoriams</span></div>';
+    var html = '<div class="view-title"><h1>' + ttl + '</h1><span class="hint">' + (admin ? "tik administratoriams" : "gali pildyti visi") + "</span></div>";
 
-    html += '<div class="card"><h2>Sąrašai</h2><div class="hint" style="margin-bottom:10px">Reikšmės išskleidžiamiems sąrašams.</div>';
+    html += '<div class="card"><h2>Sąrašai</h2><div class="hint" style="margin-bottom:10px">Reikšmės išskleidžiamiems sąrašams.' + (admin ? "" : " Jei trūksta — pridėk naują.") + "</div>";
     ["veiklos_tipas", "kategorija", "nedarbo_tipas", "vieta", "mokykla"].forEach(function (g) {
       var vals = settingRows(g).sort(function (a, b) { return (a.tvarka - b.tvarka) || (a.reiksme < b.reiksme ? -1 : 1); });
       html += '<div class="set-group"><div class="section-label">' + esc(SARASAI_LABELS[g]) + "</div>" +
         '<div class="set-chips">' + (vals.length ? vals.map(function (x) {
-          return '<span class="set-chip">' + esc(x.reiksme) + '<button type="button" class="set-x" data-action="set-del" data-id="' + x.id + '" title="Šalinti">×</button></span>';
+          return '<span class="set-chip">' + esc(x.reiksme) + (admin ? '<button type="button" class="set-x" data-action="set-del" data-id="' + x.id + '" title="Šalinti">×</button>' : "") + "</span>";
         }).join("") : '<span class="hint">Tuščia</span>') + "</div>" +
         '<div class="set-add"><input type="text" class="set-input" data-grupe="' + g + '" placeholder="Pridėti naują…" maxlength="60"><button type="button" class="btn-outline btn-sm" data-action="set-add" data-grupe="' + g + '">+ Pridėti</button></div>' +
       "</div>";
     });
     html += "</div>";
 
+    if (admin) {
     var ne = listValues("ne_veluoja");
     html += '<div class="card"><h2>Vėlavimo taisyklės</h2><div class="hint" style="margin-bottom:10px">Pažymėk, kurios kategorijos yra <b>renginiai / susirinkimai</b> — jos NEbus skaičiuojamos kaip „vėluojantys darbai".</div><div class="set-toggles">';
     listValues("kategorija").forEach(function (k) {
@@ -2721,6 +2726,7 @@
     html += '<div class="card"><h2>Eksportas</h2><div class="hint" style="margin-bottom:10px">Atsisiųsk duomenis Excel formatu.</div>' +
       '<button type="button" class="btn-outline" data-action="export">Eksportuoti į Excel</button>' +
     "</div>";
+    } // admin sekcijų pabaiga
 
     return '<div class="set-view">' + html + "</div>";
   }
@@ -3104,6 +3110,7 @@
         break;
       }
       case "set-del":
+        if (!isAdmin()) break;
         mutate(API.deleteListItem(id), "Pašalinta");
         break;
       case "save-defaults": {
@@ -3167,7 +3174,6 @@
         S.roleAs = (el.getAttribute("data-role") === "darbuotojas") ? "darbuotojas" : null;
         S.viewAsId = null;
         resetViewState();
-        if (!isAdmin() && (S.view === "nustatymai")) S.view = "apzvalga";
         closeModal();
         S.viewChanged = true;
         render();
